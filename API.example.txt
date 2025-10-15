@@ -1,4 +1,9 @@
 # Copy this file to API.txt and fill in your project-specific values.
 # API.txt should never be committed to version control.
-REDCap API Token: ENTER_YOUR_REDCAP_TOKEN_HERE
-REDCap API URL: https://redcap.ctsi.ufl.edu/redcap/api/
+
+# REDCap API Configuration
+REDCAP_TOKEN=ENTER_YOUR_REDCAP_TOKEN_HERE
+# REDCAP_API_URL=https://redcap.ctsi.ufl.edu/redcap/api/  (optional, defaults to UF)
+
+# Note: SharePoint calendar uses browser-based authentication (no token needed here)
+# Configure Azure AD settings in script.js CONFIG object

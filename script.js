@@ -9,7 +9,18 @@ const CONFIG = {
     STORAGE_KEY: 'ulltra_data',
     CACHE_VERSION: '2025-10-01-status-mapping',
     DEBUG_MODE: false, // Set to false to use real API
-    TEST_MODE: false  // Set to false to disable test data
+    TEST_MODE: false,  // Set to false to disable test data
+
+    // SharePoint Configuration (Browser-based Authentication)
+    SHAREPOINT_SITE_URL: 'https://uflorida.sharepoint.com/sites/PRICE',
+    SHAREPOINT_LIST_NAME: 'PRICECalendar',
+    SHAREPOINT_LIST_VIEW: 'ULLTRA',
+
+    // Azure AD / Microsoft 365 Configuration
+    // These will need to be configured by your organization's Azure AD admin
+    AZURE_CLIENT_ID: null,  // Set your Azure AD App Client ID here
+    AZURE_TENANT_ID: 'ufl.onmicrosoft.com',  // UF tenant
+    AZURE_REDIRECT_URI: window.location.origin  // Current page URL
 };
 
 // Conclusion code definitions sourced from REDCap metadata (see ULLTRA data dictionary)
@@ -137,10 +148,12 @@ class REDCapAPI {
             const key = rawKey.trim().toLowerCase();
             const value = valueParts.join(':').trim();
 
-            if (key.includes('token') && value && !/redact/i.test(value)) {
+            // REDCap token
+            if ((key === 'redcap_token' || key === 'token') && value && !/redact/i.test(value)) {
                 result.token = value;
             }
 
+            // API URL
             if (key.includes('url') && value) {
                 result.url = value;
             }
@@ -6527,9 +6540,568 @@ class MissingDataReportManager {
     }
 }
 
+// SharePoint Calendar Manager Class
+class SharePointCalendarManager {
+    constructor() {
+        this.events = [];
+        this.msalInstance = null;
+        this.account = null;
+        this.lastSync = null;
+        this.isAuthenticated = false;
+        this.init();
+    }
+
+    async init() {
+        console.log('Initializing SharePoint Calendar Manager...');
+        await this.initializeMsal();
+        this.setupEventListeners();
+        this.updateConnectionStatus();
+    }
+
+    async initializeMsal() {
+        // Check if Azure AD Client ID is configured
+        if (!CONFIG.AZURE_CLIENT_ID) {
+            console.warn('Azure AD Client ID not configured. SharePoint calendar will not be available.');
+            this.isAuthenticated = false;
+            return;
+        }
+
+        // MSAL configuration
+        const msalConfig = {
+            auth: {
+                clientId: CONFIG.AZURE_CLIENT_ID,
+                authority: `https://login.microsoftonline.com/${CONFIG.AZURE_TENANT_ID}`,
+                redirectUri: CONFIG.AZURE_REDIRECT_URI
+            },
+            cache: {
+                cacheLocation: 'sessionStorage', // Use session storage to avoid persistence across sessions
+                storeAuthStateInCookie: false
+            }
+        };
+
+        try {
+            // Initialize MSAL instance
+            this.msalInstance = new msal.PublicClientApplication(msalConfig);
+            await this.msalInstance.initialize();
+
+            // Check if user is already logged in
+            const accounts = this.msalInstance.getAllAccounts();
+            if (accounts.length > 0) {
+                this.account = accounts[0];
+                this.isAuthenticated = true;
+                console.log('User already authenticated:', this.account.username);
+            } else {
+                console.log('No authenticated user found. User needs to sign in.');
+                this.isAuthenticated = false;
+            }
+        } catch (error) {
+            console.error('Error initializing MSAL:', error);
+            this.isAuthenticated = false;
+        }
+    }
+
+    async signIn() {
+        if (!this.msalInstance) {
+            console.error('MSAL not initialized');
+            return;
+        }
+
+        const loginRequest = {
+            scopes: ['Sites.Read.All', 'User.Read'] // Permissions needed for SharePoint access
+        };
+
+        try {
+            const loginResponse = await this.msalInstance.loginPopup(loginRequest);
+            this.account = loginResponse.account;
+            this.isAuthenticated = true;
+            console.log('Sign in successful:', this.account.username);
+
+            this.updateConnectionStatus();
+            this.loadCalendarEvents();
+        } catch (error) {
+            console.error('Sign in error:', error);
+            this.displayError('Failed to sign in: ' + error.message);
+        }
+    }
+
+    async signOut() {
+        if (!this.msalInstance || !this.account) {
+            return;
+        }
+
+        try {
+            await this.msalInstance.logoutPopup({
+                account: this.account
+            });
+            this.account = null;
+            this.isAuthenticated = false;
+            this.events = [];
+
+            console.log('Sign out successful');
+            this.updateConnectionStatus();
+            this.displayNoConnectionMessage();
+        } catch (error) {
+            console.error('Sign out error:', error);
+        }
+    }
+
+    async getAccessToken() {
+        if (!this.msalInstance || !this.account) {
+            throw new Error('Not authenticated');
+        }
+
+        const tokenRequest = {
+            scopes: ['Sites.Read.All'],
+            account: this.account
+        };
+
+        try {
+            // Try to acquire token silently first
+            const response = await this.msalInstance.acquireTokenSilent(tokenRequest);
+            return response.accessToken;
+        } catch (error) {
+            console.warn('Silent token acquisition failed, trying interactive:', error);
+
+            // If silent acquisition fails, try interactive
+            try {
+                const response = await this.msalInstance.acquireTokenPopup(tokenRequest);
+                return response.accessToken;
+            } catch (interactiveError) {
+                console.error('Interactive token acquisition failed:', interactiveError);
+                throw interactiveError;
+            }
+        }
+    }
+
+    setupEventListeners() {
+        // Refresh calendar button
+        const refreshBtn = document.getElementById('refresh-calendar-data');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.loadCalendarEvents(true));
+        }
+
+        // Export calendar button
+        const exportBtn = document.getElementById('export-calendar');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportCalendar());
+        }
+
+        // Sign out button
+        const signOutBtn = document.getElementById('sharepoint-signout');
+        if (signOutBtn) {
+            signOutBtn.addEventListener('click', () => this.signOut());
+        }
+
+        // Filter controls
+        const participantFilter = document.getElementById('calendar-participant-filter');
+        const typeFilter = document.getElementById('calendar-type-filter');
+        const timeframeFilter = document.getElementById('calendar-timeframe-filter');
+        const searchInput = document.getElementById('calendar-search');
+
+        if (participantFilter) participantFilter.addEventListener('change', () => this.applyFilters());
+        if (typeFilter) typeFilter.addEventListener('change', () => this.applyFilters());
+        if (timeframeFilter) timeframeFilter.addEventListener('change', () => this.applyFilters());
+        if (searchInput) searchInput.addEventListener('input', () => this.applyFilters());
+
+        // Load calendar when tab is shown
+        const calendarTab = document.querySelector('[data-tab="participant-contact"]');
+        if (calendarTab) {
+            calendarTab.addEventListener('click', () => {
+                if (this.isAuthenticated && this.events.length === 0) {
+                    this.loadCalendarEvents();
+                } else if (!this.isAuthenticated) {
+                    this.displayNoConnectionMessage();
+                }
+            });
+        }
+    }
+
+    updateConnectionStatus() {
+        const statusEl = document.getElementById('sp-connection-status');
+        const configEl = document.getElementById('sp-config-status');
+        const lastSyncEl = document.getElementById('sp-last-sync');
+        const signOutBtn = document.getElementById('sharepoint-signout');
+
+        if (statusEl) {
+            statusEl.textContent = this.isAuthenticated ? 'Signed In' : 'Not Signed In';
+            statusEl.style.color = this.isAuthenticated ? 'green' : 'red';
+        }
+
+        if (configEl) {
+            const isConfigured = CONFIG.AZURE_CLIENT_ID !== null;
+            configEl.textContent = isConfigured ? 'Azure AD Configured' : 'Not Configured';
+            configEl.style.color = isConfigured ? 'green' : 'orange';
+
+            // Show username if authenticated
+            if (this.isAuthenticated && this.account) {
+                configEl.textContent = `Signed in as: ${this.account.username}`;
+            }
+        }
+
+        if (lastSyncEl) {
+            lastSyncEl.textContent = this.lastSync ? new Date(this.lastSync).toLocaleString() : 'Never';
+        }
+
+        // Show/hide sign out button based on authentication status
+        if (signOutBtn) {
+            signOutBtn.style.display = this.isAuthenticated ? 'inline-block' : 'none';
+        }
+    }
+
+    async loadCalendarEvents(forceRefresh = false) {
+        if (!this.isAuthenticated) {
+            this.displayNoConnectionMessage();
+            return;
+        }
+
+        console.log('Loading calendar events from SharePoint...');
+        this.showLoading();
+
+        try {
+            // Fetch calendar events from SharePoint via Microsoft Graph API
+            const events = await this.fetchSharePointEvents();
+            this.events = events;
+            this.lastSync = Date.now();
+            this.updateConnectionStatus();
+            this.displayCalendarEvents(events);
+            this.updateSummaryMetrics(events);
+            this.populateParticipantFilter(events);
+        } catch (error) {
+            console.error('Error loading calendar events:', error);
+            this.displayError(error.message);
+        }
+    }
+
+    async fetchSharePointEvents() {
+        try {
+            // Get access token
+            const accessToken = await this.getAccessToken();
+
+            // First, get the site ID
+            const siteUrl = CONFIG.SHAREPOINT_SITE_URL;
+            const sitePath = new URL(siteUrl).pathname;
+            const hostname = new URL(siteUrl).hostname;
+
+            // Get site ID from Microsoft Graph
+            const siteResponse = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${hostname}:${sitePath}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (!siteResponse.ok) {
+                throw new Error(`Failed to get site: ${siteResponse.status} ${siteResponse.statusText}`);
+            }
+
+            const siteData = await siteResponse.json();
+            const siteId = siteData.id;
+
+            // Get the list
+            const listResponse = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$filter=displayName eq '${CONFIG.SHAREPOINT_LIST_NAME}'`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (!listResponse.ok) {
+                throw new Error(`Failed to get list: ${listResponse.status} ${listResponse.statusText}`);
+            }
+
+            const listData = await listResponse.json();
+            if (!listData.value || listData.value.length === 0) {
+                throw new Error(`List '${CONFIG.SHAREPOINT_LIST_NAME}' not found`);
+            }
+
+            const listId = listData.value[0].id;
+
+            // Get list items with fields expanded
+            const itemsResponse = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (!itemsResponse.ok) {
+                throw new Error(`Failed to get list items: ${itemsResponse.status} ${itemsResponse.statusText}`);
+            }
+
+            const itemsData = await itemsResponse.json();
+
+            // Transform SharePoint list items to calendar events
+            // Filter by the ULLTRA view if needed
+            const events = itemsData.value
+                .map(item => this.transformSharePointItemToEvent(item))
+                .filter(event => event !== null);
+
+            return events;
+
+        } catch (error) {
+            console.error('Error fetching SharePoint events:', error);
+            throw error;
+        }
+    }
+
+    transformSharePointItemToEvent(item) {
+        // Transform SharePoint list item to calendar event format
+        // This mapping will depend on the actual column names in your SharePoint list
+        const fields = item.fields;
+
+        // Common SharePoint calendar fields
+        // Adjust these field names based on your actual SharePoint list structure
+        return {
+            id: item.id,
+            title: fields.Title || '',
+            date: fields.EventDate || fields.StartDate || fields.Date,
+            time: fields.EventTime || fields.Time || '',
+            participant: fields.Participant || fields.ParticipantID || '',
+            type: fields.Category || fields.EventType || fields.Type || 'general',
+            description: fields.Description || fields.Notes || fields.Body || '',
+            location: fields.Location || '',
+            status: fields.Status || '',
+            // Include any other relevant fields from your SharePoint list
+            rawFields: fields // Keep raw fields for debugging
+        };
+    }
+
+    displayCalendarEvents(events) {
+        const container = document.getElementById('calendar-events-container');
+        if (!container) return;
+
+        if (events.length === 0) {
+            container.innerHTML = `
+                <div class="calendar-empty">
+                    <p>No calendar events found.</p>
+                    <p class="calendar-note">Events from the ULLTRA SharePoint calendar will appear here once the integration is configured.</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Group events by date
+        const eventsByDate = this.groupEventsByDate(events);
+
+        let html = '';
+        for (const [date, dateEvents] of Object.entries(eventsByDate)) {
+            html += `
+                <div class="calendar-date-group">
+                    <h4 class="calendar-date-header">${this.formatDateHeader(date)}</h4>
+                    <div class="calendar-events-list">
+            `;
+
+            dateEvents.forEach(event => {
+                html += this.createEventCard(event);
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+    }
+
+    groupEventsByDate(events) {
+        const grouped = {};
+        events.forEach(event => {
+            const date = event.date || event.EventDate || event.Start;
+            const dateKey = new Date(date).toDateString();
+            if (!grouped[dateKey]) {
+                grouped[dateKey] = [];
+            }
+            grouped[dateKey].push(event);
+        });
+        return grouped;
+    }
+
+    formatDateHeader(dateString) {
+        const date = new Date(dateString);
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        if (date.toDateString() === today.toDateString()) {
+            return 'Today - ' + date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        } else if (date.toDateString() === tomorrow.toDateString()) {
+            return 'Tomorrow - ' + date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        }
+        return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    createEventCard(event) {
+        const eventType = event.type || 'general';
+        const participant = event.participant || 'Unknown';
+        const time = event.time || '';
+        const description = event.description || '';
+        const location = event.location || '';
+        const title = event.title || 'Event';
+
+        return `
+            <div class="calendar-event-card" data-event-type="${eventType}">
+                <div class="event-header">
+                    <span class="event-time">${time}</span>
+                    <span class="event-type event-type-${eventType.toLowerCase()}">${eventType}</span>
+                </div>
+                <div class="event-body">
+                    ${title ? `<div class="event-title"><strong>${title}</strong></div>` : ''}
+                    <div class="event-participant"><strong>Participant:</strong> ${participant}</div>
+                    ${description ? `<div class="event-description">${description}</div>` : ''}
+                    ${location ? `<div class="event-location"><strong>Location:</strong> ${location}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    updateSummaryMetrics(events) {
+        const totalEvents = events.length;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+
+        const todayEvents = events.filter(e => {
+            const eventDate = new Date(e.date);
+            eventDate.setHours(0, 0, 0, 0);
+            return eventDate.getTime() === today.getTime();
+        });
+
+        const upcomingEvents = events.filter(e => {
+            const eventDate = new Date(e.date);
+            return eventDate >= today && eventDate <= nextWeek;
+        });
+
+        const participants = new Set(events.map(e => e.participant).filter(p => p));
+
+        this.updateMetric('calendar-total-events', totalEvents);
+        this.updateMetric('calendar-upcoming-events', upcomingEvents.length);
+        this.updateMetric('calendar-today-events', todayEvents.length);
+        this.updateMetric('calendar-active-participants', participants.size);
+    }
+
+    updateMetric(elementId, value) {
+        const el = document.getElementById(elementId);
+        if (el) el.textContent = value;
+    }
+
+    populateParticipantFilter(events) {
+        const filter = document.getElementById('calendar-participant-filter');
+        if (!filter) return;
+
+        const participants = new Set(events.map(e => e.participant).filter(p => p));
+        const sortedParticipants = Array.from(participants).sort();
+
+        filter.innerHTML = '<option value="all">All Participants</option>';
+        sortedParticipants.forEach(participant => {
+            const option = document.createElement('option');
+            option.value = participant;
+            option.textContent = participant;
+            filter.appendChild(option);
+        });
+    }
+
+    applyFilters() {
+        // Filter logic would go here
+        console.log('Applying calendar filters...');
+        // This would filter this.events based on the selected filters and re-display
+    }
+
+    displayNoConnectionMessage() {
+        const container = document.getElementById('calendar-events-container');
+        if (!container) return;
+
+        // Check if Azure AD is configured
+        if (!CONFIG.AZURE_CLIENT_ID) {
+            container.innerHTML = `
+                <div class="calendar-no-connection">
+                    <h3>SharePoint Calendar Not Configured</h3>
+                    <p>Azure AD authentication has not been configured for this application.</p>
+                    <p class="calendar-note"><strong>Configuration Required:</strong></p>
+                    <ol>
+                        <li>Register an Azure AD application at <a href="https://portal.azure.com" target="_blank">Azure Portal</a></li>
+                        <li>Set the Client ID in <code>script.js</code> CONFIG.AZURE_CLIENT_ID</li>
+                        <li>Configure API permissions: Sites.Read.All and User.Read</li>
+                        <li>Add redirect URI: ${CONFIG.AZURE_REDIRECT_URI}</li>
+                        <li>Refresh the page</li>
+                    </ol>
+                    <p class="calendar-note"><strong>SharePoint Details:</strong></p>
+                    <ul>
+                        <li><strong>Site:</strong> ${CONFIG.SHAREPOINT_SITE_URL}</li>
+                        <li><strong>List:</strong> ${CONFIG.SHAREPOINT_LIST_NAME}</li>
+                        <li><strong>View:</strong> ${CONFIG.SHAREPOINT_LIST_VIEW}</li>
+                    </ul>
+                </div>
+            `;
+        } else {
+            // Azure AD is configured, user just needs to sign in
+            container.innerHTML = `
+                <div class="calendar-no-connection">
+                    <h3>Sign In Required</h3>
+                    <p>Please sign in with your Microsoft 365 account to view calendar events.</p>
+                    <button class="refresh-btn" onclick="window.sharePointCalendarManager.signIn()" style="margin: 20px auto; display: block; padding: 12px 24px; font-size: 16px;">
+                        Sign In with Microsoft
+                    </button>
+                    <p class="calendar-note"><strong>SharePoint Details:</strong></p>
+                    <ul>
+                        <li><strong>Site:</strong> ${CONFIG.SHAREPOINT_SITE_URL}</li>
+                        <li><strong>List:</strong> ${CONFIG.SHAREPOINT_LIST_NAME}</li>
+                    </ul>
+                </div>
+            `;
+        }
+    }
+
+    displayError(message) {
+        const container = document.getElementById('calendar-events-container');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="calendar-error">
+                <h3>Error Loading Calendar Events</h3>
+                <p>${message}</p>
+                <button class="refresh-btn" onclick="window.sharePointCalendarManager.loadCalendarEvents(true)">Try Again</button>
+            </div>
+        `;
+    }
+
+    showLoading() {
+        const container = document.getElementById('calendar-events-container');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="calendar-loading">
+                <div class="spinner"></div>
+                <p>Loading calendar events from SharePoint...</p>
+            </div>
+        `;
+    }
+
+    exportCalendar() {
+        console.log('Exporting calendar...');
+        // Export functionality would go here
+        alert('Calendar export functionality will be implemented here');
+    }
+}
+
 // Initialize Missing Data Report Manager when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, initializing missing data report manager...');
     window.missingDataReportManager = new MissingDataReportManager();
+
+    // Initialize SharePoint Calendar Manager
+    console.log('Initializing SharePoint Calendar Manager...');
+    window.sharePointCalendarManager = new SharePointCalendarManager();
 });
 

@@ -13,5 +13,8 @@ dist/
 # VS Code
 .vscode/
 
+# Claude Code local settings
+.claude/
+
 # Large metadata files (>100MB)
 metadata/ULLTRA_2025-08-27_1036.REDCap.xml

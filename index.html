@@ -9,6 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <!-- Microsoft Authentication Library for SharePoint integration -->
+    <script src="https://alcdn.msauth.net/browser/2.38.1/js/msal-browser.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -23,6 +25,7 @@
             <button class="tab-button" data-tab="missing-data">Missing Data Report</button>
             <button class="tab-button" data-tab="data-quality">Data Quality</button>
             <button class="tab-button" data-tab="consort">CONSORT Diagram</button>
+            <button class="tab-button" data-tab="participant-contact">Participant Contact</button>
         </nav>
 
         <main>
@@ -670,6 +673,86 @@
                     <div class="consort-note">
                         Study ongoing - Analysis phase will be reported upon trial completion.<br>
                         Last updated: <span id="consort-last-updated">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="participant-contact" class="tab-content">
+                <h2>Participant Contact Schedule</h2>
+                <p class="calendar-subtitle">ULLTRA Study Calendar Events from SharePoint</p>
+
+                <div class="calendar-actions">
+                    <button id="refresh-calendar-data" class="refresh-btn">Refresh Calendar</button>
+                    <button id="export-calendar" class="export-btn">Export Calendar</button>
+                    <button id="sharepoint-signout" class="export-btn" style="display: none;">Sign Out</button>
+                </div>
+
+                <div class="calendar-filters">
+                    <h3>Filter Events</h3>
+                    <div class="filter-controls">
+                        <select id="calendar-participant-filter" class="filter-select">
+                            <option value="all">All Participants</option>
+                        </select>
+                        <select id="calendar-type-filter" class="filter-select">
+                            <option value="all">All Event Types</option>
+                            <option value="visit">Visits</option>
+                            <option value="follow-up">Follow-ups</option>
+                            <option value="contact">Contact Attempts</option>
+                        </select>
+                        <select id="calendar-timeframe-filter" class="filter-select">
+                            <option value="all">All Time</option>
+                            <option value="upcoming">Upcoming</option>
+                            <option value="past-week">Past Week</option>
+                            <option value="past-month">Past Month</option>
+                            <option value="this-week">This Week</option>
+                            <option value="next-week">Next Week</option>
+                        </select>
+                        <input type="text" id="calendar-search" placeholder="Search events..." class="filter-input">
+                    </div>
+                </div>
+
+                <div class="calendar-summary">
+                    <h3>Event Summary</h3>
+                    <div class="calendar-metrics-grid">
+                        <div class="metric-card">
+                            <h4>Total Events</h4>
+                            <div class="metric-value" id="calendar-total-events">--</div>
+                            <p class="metric-description">All calendar events</p>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Upcoming Events</h4>
+                            <div class="metric-value" id="calendar-upcoming-events">--</div>
+                            <p class="metric-description">Events in the next 7 days</p>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Today's Events</h4>
+                            <div class="metric-value" id="calendar-today-events">--</div>
+                            <p class="metric-description">Events scheduled for today</p>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Active Participants</h4>
+                            <div class="metric-value" id="calendar-active-participants">--</div>
+                            <p class="metric-description">Participants with upcoming events</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="calendar-view-section">
+                    <h3>Calendar Events</h3>
+                    <div id="calendar-events-container" class="calendar-events-container">
+                        <!-- Calendar events will be populated here -->
+                        <div class="calendar-loading">
+                            <p>Loading calendar events...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="calendar-notes">
+                    <h3>SharePoint Integration Status</h3>
+                    <div id="sharepoint-status" class="sharepoint-status">
+                        <p><strong>Status:</strong> <span id="sp-connection-status">Not Connected</span></p>
+                        <p><strong>Last Sync:</strong> <span id="sp-last-sync">Never</span></p>
+                        <p><strong>Configuration:</strong> <span id="sp-config-status">Not Configured</span></p>
                     </div>
                 </div>
             </div>

@@ -2039,3 +2039,273 @@ header p {
         break-inside: avoid;
     }
 }
+
+/* SharePoint Calendar Styles - Participant Contact Tab */
+.calendar-subtitle {
+    text-align: center;
+    color: #667eea;
+    font-size: 1.05em;
+    margin-bottom: 25px;
+    font-style: italic;
+}
+
+.calendar-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-bottom: 30px;
+}
+
+.calendar-filters {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+}
+
+.calendar-filters h3 {
+    margin-bottom: 15px;
+    color: #495057;
+    font-size: 1.2em;
+}
+
+.calendar-summary {
+    margin-bottom: 30px;
+}
+
+.calendar-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-top: 15px;
+}
+
+.calendar-view-section {
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+}
+
+.calendar-view-section h3 {
+    margin-bottom: 20px;
+    color: #333;
+    font-size: 1.4em;
+}
+
+.calendar-events-container {
+    min-height: 300px;
+}
+
+.calendar-date-group {
+    margin-bottom: 30px;
+}
+
+.calendar-date-header {
+    padding: 12px 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+.calendar-events-list {
+    display: grid;
+    gap: 15px;
+}
+
+.calendar-event-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 15px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.calendar-event-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #667eea;
+}
+
+.event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.event-time {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.95em;
+}
+
+.event-type {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.event-type-visit {
+    background: #d4edda;
+    color: #155724;
+}
+
+.event-type-follow-up {
+    background: #cce7ff;
+    color: #004085;
+}
+
+.event-type-contact {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.event-type-general {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.event-body {
+    font-size: 0.9em;
+}
+
+.event-participant {
+    margin-bottom: 8px;
+    color: #495057;
+}
+
+.event-description {
+    margin-bottom: 8px;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.event-location {
+    color: #6c757d;
+}
+
+.calendar-empty,
+.calendar-no-connection,
+.calendar-error,
+.calendar-loading {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.calendar-empty h3,
+.calendar-no-connection h3,
+.calendar-error h3 {
+    color: #495057;
+    margin-bottom: 15px;
+    font-size: 1.3em;
+}
+
+.calendar-empty p,
+.calendar-no-connection p,
+.calendar-error p {
+    color: #6c757d;
+    margin-bottom: 10px;
+    line-height: 1.6;
+}
+
+.calendar-note {
+    font-style: italic;
+    color: #6c757d;
+}
+
+.calendar-no-connection ol,
+.calendar-no-connection ul {
+    text-align: left;
+    max-width: 600px;
+    margin: 20px auto;
+    line-height: 1.8;
+}
+
+.calendar-no-connection code {
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    color: #d63031;
+}
+
+.calendar-error {
+    background: #fff5f5;
+    border: 1px solid #fc8181;
+    border-radius: 8px;
+}
+
+.calendar-loading {
+    background: #f8f9fa;
+}
+
+.calendar-loading .spinner {
+    margin: 0 auto 15px auto;
+}
+
+.calendar-notes {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 10px;
+    border-left: 4px solid #667eea;
+}
+
+.calendar-notes h3 {
+    margin-bottom: 15px;
+    color: #495057;
+    font-size: 1.2em;
+}
+
+.sharepoint-status {
+    font-size: 0.95em;
+}
+
+.sharepoint-status p {
+    margin: 8px 0;
+    color: #495057;
+}
+
+.sharepoint-status strong {
+    color: #333;
+}
+
+/* Responsive design for calendar */
+@media (max-width: 768px) {
+    .calendar-metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .calendar-filters {
+        padding: 15px;
+    }
+
+    .calendar-view-section {
+        padding: 15px;
+    }
+
+    .calendar-date-header {
+        font-size: 1em;
+        padding: 10px 12px;
+    }
+
+    .calendar-event-card {
+        padding: 12px;
+    }
+
+    .event-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+}
