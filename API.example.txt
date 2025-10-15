@@ -1,0 +1,4 @@
+# Copy this file to API.txt and fill in your project-specific values.
+# API.txt should never be committed to version control.
+REDCap API Token: ENTER_YOUR_REDCAP_TOKEN_HERE
+REDCap API URL: https://redcap.ctsi.ufl.edu/redcap/api/

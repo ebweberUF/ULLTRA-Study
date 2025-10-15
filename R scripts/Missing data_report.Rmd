@@ -1,0 +1,1133 @@
+---
+Date: "`r Sys.Date()`"
+output:
+  pdf_document:
+  fontsize: 22pt
+geometry: margin=1.2cm
+toc: true
+toc_depth: 2
+toc-title: "Table of Contents"
+header-includes:
+- \usepackage{makecell, tabularx, float, multirow, pgfplots}
+- \pgfplotsset{compat=1.16}
+- \usepackage{booktabs}
+- \usepackage{sectsty} \subsectionfont{\centering}
+- \usepackage{sectsty} \sectionfont{\centering}
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{wrapfig}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{xcolor}
+- \renewcommand{\contentsname}{Table of Contents}
+params:
+  urdir: ''
+site: UFlorida
+wkreport_date: wkreport_date
+combined: combined
+indic_summ: ''
+upload_date: ''
+start_date: ''
+complete_percent: ''
+n_completedbase: ''
+---
+
+```{r setup, include=FALSE}
+
+#############################
+### Version Update Notes ###
+#############################
+# ULLTRA_01:
+#   -Modifying the report for the ULLTRA Study. First version for deadline - will add more later
+#   -I had to do a lot of manipulation with the enrollment plot to make it look reasonable for only having one enrollment. I will have to update it as time goes on (looks like I did something similar for the first couple of PACE-DLB reports, so it looks like we're in good shape)
+# ULLTRA_02:
+#   -General bug fixes
+#   -Updated consort diagram to better reflect the way participants move through the study
+#   -Expected windows for the consort diagram are based on the original windows, so updates to the expected windows will have to be added at some point
+
+# Mute message and warnings
+knitr::opts_chunk$set(echo = F, message=F, 
+                      warning=F, webshot = "webshot")
+
+# Load packages
+
+library(tidyr) # Data manipulation
+library(REDCapR) # Communicate with REDCap
+library(DiagrammeR) # Work flow figure
+library(webshot) 
+library(DiagrammeRsvg)
+library(rsvg)
+library(magrittr)
+library(png)
+library(svglite)
+library(lubridate) # Date
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(knitr)
+library(kableExtra) # Produce latex or html tables
+#library(tidyft)
+
+########### Step 0 Set up the running environment #####################################
+
+rm(list=ls());
+
+#urdir <- '\\phhp-file31.ad.ufl.edu/home15$/blabarre';
+urdir <- 'E:/Tingchang Wang/UFL PhD/trial project/ULLTRA/';
+# token = '5E73DB6ACAD192F300DDA7FD9CE69F3B'; #for training data
+token = '140FD47B5E428EABD249A853C45C7'; #for prod data
+uri = 'https://redcap.ctsi.ufl.edu/redcap/api/';
+
+# wkreport_date <- as.Date("2025-07-28");
+wkreport_date <- as.Date(NA);
+# 
+if(is.null(wkreport_date) | is.na(wkreport_date)){wkreport_date <- Sys.Date();}
+
+# currentdir <- setwd(urdir);
+
+#####################################  Installation Needed #######################################
+
+#webshot::install_phantomjs() # If it is the first time, you need to install phantomjs
+
+##################################################################################################
+
+# Global options
+options(knitr.table.format = "html") 
+
+######################################## Kable display parameters
+
+column_1_width <- '9cm'
+kable_font_size <- 15
+
+######################################## User defined functions
+Sys.setlocale("LC_TIME", "en_US.UTF-8")
+plusminus <- '\u00b1' #Encoding +/- sign
+#Encoding(plusminus) <- 'UTB-8'
+
+outform <- function(x, k = 2) {
+  xout <- ifelse(round(x, k) == 0, signif(x, k), format(round(x, k), nsmall = k))
+  xout <- gsub('^ ', '', xout)
+}
+
+missing_fun <- function(input) {
+  output <- ifelse(input == '' | is.na(input), 'X', '')
+}
+
+simpleCap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2), sep="", collapse=" ")
+}
+
+assign_na <- function(x) {
+  return(as.character(NA))
+}
+
+is.redcap.na <- function(x) {
+  return(is.na(x) | as.character(x) == '')
+}
+
+as.redcap.Date <- function(x, format = '%Y-%m-%d') {
+  return(as.Date(x, format = format))
+}
+
+concatout_sub <- function(data, var, type) {
+  if (type == 'con') {
+    m_temp <- mean(data[, var], na.rm = T)
+    sd_temp <- sd(data[, var], na.rm = T)
+    outmsd <- paste0(outform(m_temp), plusminus, outform(sd_temp))
+    out <- c(var, '', outmsd)
+  } else if (type == 'tim') {
+    m_temp <- mean(data[, var], na.rm = T)
+    sd_temp <- sd(data[, var], na.rm = T)
+    outmsds <- paste0(round(m_temp), plusminus, round(sd_temp))
+    out <- c(var, '', outmsds)
+  } else if (type == 'cat') {
+    outfreq <- matrix(paste0(xtabs(~data[, var]), ' (', outform(100 * prop.table(xtabs(~data[, var]))), '%)'), nrow = length(levels(data[, var])))
+    out <- cbind(rep(var, length(levels(data[, var]))), rownames(xtabs(~data[, var])), outfreq)
+  }
+  return(out)
+}
+
+concatout <- function(data, varss, types) {
+  out_com <- c()
+  for (i in 1:length(varss)) {
+    concatout_sub(data, varss[i], types[i])
+    out_com <- rbind(out_com, concatout_sub(data, varss[i], types[i]))
+  }
+  return(out_com)
+}
+
+###LEAVING OFF: trying to devise a new way to calculate enrollments since the existing doesn't work well
+compenroll <- function(report_date=NA,data=NULL){
+  #report_date <- wkreport_date
+  #data <- epats
+  if(is.na(report_date) | is.null(data)){ return(NULL);}
+  n_target_enrollment <- 130
+  duration_w <- 208
+  data_enroll <- data %>% select(participant_id, vdate_v1);
+  startdate <- min(data_enroll$vdate_v1,na.rm=T)
+  if(is.infinite(startdate)){return(NULL);}
+  startdate <- floor((startdate - report_date)/7) * 7 + report_date;
+  expectedend <- startdate+days(7)+weeks(duration_w)
+  if(expectedend<wkreport_date){expectedend<-wkreport_date}
+  enddate <- max(data_enroll$vdate_v1,na.rm=T)
+  enddate <- floor((enddate - report_date)/7) * 7 + report_date;
+  enddate <- enddate + days(7)
+  if(enddate<wkreport_date){enddate<-wkreport_date}
+  report_dates <- startdate + days(7) * 0:((enddate - startdate)/7);
+  expected_dates <- startdate + days(7) * 0:((expectedend - startdate)/7)
+  actual_enrollments <- expected_enrollments <- reportdates <- c();
+  s_date <- startdate;
+  if(!is.na(s_date)){
+      s_date <- floor((s_date - report_date)/7) * 7 + report_date;# + 14; #Adding a 2-week starting ramp
+    }
+  else{
+      s_date <- report_date + 7;
+    }
+  for (i in 1:length(report_dates)) {
+    if(report_date >= report_dates[i]) {
+      data_beforeport <- data_enroll %>% filter(ifelse(is.na(vdate_v1),FALSE,ifelse(vdate_v1 <= report_dates[i],TRUE,FALSE)));
+      n <- sum(!is.na(data_beforeport$vdate_v1));
+      enrollment <- data.frame(Date = report_dates[i], n_participants = n, Group = 'Actual Enrollment');
+      actual_enrollments <- actual_enrollments %>% bind_rows(enrollment);
+    }
+    }
+for (i in 1:length(expected_dates)) {
+  n <-as.numeric(0);
+      if(expected_dates[i] >= s_date){
+        if(expected_dates[i] <= expectedend + days(7)){
+          n <- n + n_target_enrollment/duration_w * (as.numeric((expected_dates[i]-s_date))/7);
+        }
+        else{
+          n <- n + n_target_enrollment;
+        }
+      }
+    enrollment <- data.frame(Date = expected_dates[i], n_participants = n, Group = 'Target Enrollment');
+    expected_enrollments <- expected_enrollments %>% bind_rows(enrollment);
+}
+  combined_enrollments <- rbind(actual_enrollments, expected_enrollments);
+  return(combined_enrollments);
+}
+
+
+#####
+######################################## Site names, labels and abbreviations
+
+#site_vec <- c('mayo_clinic_roches' = "Mayo Clinic (Rochester)", 'university_of_flor' = 'University of Florida', 'university_of_miam' = 'University of Miami', 'university_of_mich' = 'University of Michigan', 'university_of_virg' = 'University of Virginia', 'virtual_cohort' = 'Virtual Cohort')
+#site_vec_abb <- c('mayo_clinic_roches' = "Mayo", 'university_of_flor' = 'UF', 'university_of_miam' = 'UMiami', 'university_of_mich' = 'UMich', 'university_of_virg' = 'UV', 'virtual_cohort' = 'Virtual')
+
+# PDGENE Site Name translate into DAG ID
+#DAG_id <-  c('mayo_clinic_roches' = 1925, 'university_of_flor' = 1923, 'university_of_miam' = 2134, 'university_of_mich' = 1924, 'university_of_virg' = 1926, 'virtual_cohort' = 1927) #Prod IDs
+#DAG_id <-  c('mayo_clinic_roches' = 2209, 'university_of_flor' = 2207, 'university_of_miam' = 2212, 'university_of_mich' = 2208, 'university_of_virg' = 2210, 'virtual_cohort' = 2211) #TRAINING IDs
+
+
+#### Read from REDCap #########
+whole_data <- redcap_read_oneshot(redcap_uri = uri, token = token, export_data_access_groups = F, guess_max = 1500);
+whole_data <- whole_data$data %>% 
+  filter(participant_id != "TEST") %>% 
+  filter(participant_id != "Test-2")
+# whole_data = read.csv(paste0(urdir, "data/whole_data.csv"))
+if(!is.na(wkreport_date)){
+  whole_data = whole_data[(whole_data$icf_date <= wkreport_date)| is.na(whole_data$icf_date), ]
+  whole_data = whole_data[(whole_data$vdate <= wkreport_date)| is.na(whole_data$vdate), ]
+  whole_data = whole_data[(whole_data$meds_dt <= wkreport_date)| is.na(whole_data$meds_dt), ]
+  whole_data = whole_data[(whole_data$samp_date <= wkreport_date)| is.na(whole_data$samp_date), ]
+}
+
+
+
+##### variables needed
+
+variable_start <- c('participant_id','pre_date','pre_screen_status','pre_callback3')
+
+variable_base <- c('participant_id','vdate','meds_dt', 'samp_date', 'icf_date', 'elig_status')
+
+variable_v1 <- c('participant_id','vdate','meds_dt', 'samp_date', 'rand_code')
+
+variable_v2 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v3 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v4 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v5 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v6 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v7 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v8 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v9 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_fu1 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_fu2 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_v10 <- c('participant_id','vdate','meds_dt', 'samp_date')
+
+variable_cw <- c('participant_id','conclusion')
+  
+variable_common <- c('redcap_event_name', 'redcap_repeat_instrument', 'redcap_repeat_instance');
+
+  # To handle the issue related to checkboxes, e.g., read the checkbox 'pdq39_m_28b___1' only by using 'pdq39_m_28b', but 'pdq39_m_28b' is a columnname in the data frame 
+  #variable_screen <- names(whole_data)[grepl(paste(variable_screen,collapse="|"),colnames(whole_data))];
+  
+  ##### Screening information #####
+  dat_start <- whole_data[which(whole_data$redcap_event_name=='prescreening_arm_1' & is.na(whole_data$redcap_repeat_instrument)),c(variable_start,variable_common)];
+  combined <- dat_start
+
+  ##### Baseline information can be empty if no one in the database has rescheduled baseline visit #####
+  dat_base <- whole_data[which(whole_data$redcap_event_name=='baseline_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_base];
+  # if non-empty dataset is returned
+  if (sum(dim(dat_base)) == 0){
+    # To create an empty dataset with needed variables
+    dat_base <- data.frame(matrix(NA_character_, ncol = length(variable_base)), stringsAsFactors = F)
+    colnames(dat_base) <- variable_base
+  }
+  dat_base <- dat_base %>% rename_at(vars(-participant_id), function(x) paste0(x, '_base'))
+  combined <- left_join(combined, dat_base, by = 'participant_id')
+  
+  ##### V1 vist information #####
+  dat_v1 <- whole_data[which(whole_data$redcap_event_name=='v1_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v1];
+  if (sum(dim(dat_v1)) == 0){
+    dat_v1 <- data.frame(matrix(NA_character_, ncol = length(variable_v1)), stringsAsFactors = F)
+    colnames(dat_v1) <- variable_v1
+  }
+  dat_v1 <- dat_v1 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v1'))
+  combined <- left_join(combined, dat_v1, by = 'participant_id')
+  
+  ##### v2 vist information #####
+  dat_v2 <- whole_data[which(whole_data$redcap_event_name=='v2_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v2];
+  if (sum(dim(dat_v2)) == 0){
+    dat_v2 <- data.frame(matrix(NA_character_, ncol = length(variable_v2)), stringsAsFactors = F)
+    colnames(dat_v2) <- variable_v2
+  }
+  dat_v2 <- dat_v2 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v2'))
+  combined <- left_join(combined, dat_v2, by = 'participant_id')
+  
+  ##### v3 vist information #####
+  dat_v3 <- whole_data[which(whole_data$redcap_event_name=='v3_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v3];
+  if (sum(dim(dat_v3)) == 0){
+    dat_v3 <- data.frame(matrix(NA_character_, ncol = length(variable_v3)), stringsAsFactors = F)
+    colnames(dat_v3) <- variable_v3
+  }
+  dat_v3 <- dat_v3 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v3'))
+  combined <- left_join(combined, dat_v3, by = 'participant_id')
+  
+  ##### v4 vist information #####
+  dat_v4 <- whole_data[which(whole_data$redcap_event_name=='v4_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v4];
+  if (sum(dim(dat_v4)) == 0){
+    dat_v4 <- data.frame(matrix(NA_character_, ncol = length(variable_v4)), stringsAsFactors = F)
+    colnames(dat_v4) <- variable_v4
+  }
+  dat_v4 <- dat_v4 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v4'))
+  combined <- left_join(combined, dat_v4, by = 'participant_id')
+  
+  ##### v5 vist information #####
+  dat_v5 <- whole_data[which(whole_data$redcap_event_name=='v5_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v5];
+  if (sum(dim(dat_v5)) == 0){
+    dat_v5 <- data.frame(matrix(NA_character_, ncol = length(variable_v5)), stringsAsFactors = F)
+    colnames(dat_v5) <- variable_v5
+  }
+  dat_v5 <- dat_v5 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v5'))
+  combined <- left_join(combined, dat_v5, by = 'participant_id')
+  
+  ##### v6 vist information #####
+  dat_v6 <- whole_data[which(whole_data$redcap_event_name=='v6_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v6];
+  if (sum(dim(dat_v6)) == 0){
+    dat_v6 <- data.frame(matrix(NA_character_, ncol = length(variable_v6)), stringsAsFactors = F)
+    colnames(dat_v6) <- variable_v6
+  }
+  dat_v6 <- dat_v6 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v6'))
+  combined <- left_join(combined, dat_v6, by = 'participant_id')
+  
+  ##### v7 vist information #####
+  dat_v7 <- whole_data[which(whole_data$redcap_event_name=='v7_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v7];
+  if (sum(dim(dat_v7)) == 0){
+    dat_v7 <- data.frame(matrix(NA_character_, ncol = length(variable_v7)), stringsAsFactors = F)
+    colnames(dat_v7) <- variable_v7
+  }
+  dat_v7 <- dat_v7 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v7'))
+  combined <- left_join(combined, dat_v7, by = 'participant_id')
+  
+  ##### v8 vist information #####
+  dat_v8 <- whole_data[which(whole_data$redcap_event_name=='v8_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v8];
+  if (sum(dim(dat_v8)) == 0){
+    dat_v8 <- data.frame(matrix(NA_character_, ncol = length(variable_v8)), stringsAsFactors = F)
+    colnames(dat_v8) <- variable_v8
+  }
+  dat_v8 <- dat_v8 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v8'))
+  combined <- left_join(combined, dat_v8, by = 'participant_id')
+  
+  ##### v9 vist information #####
+  dat_v9 <- whole_data[which(whole_data$redcap_event_name=='v9_arm_1' & is.na(whole_data$redcap_repeat_instrument)& whole_data$tmd_exam_complete == 2&(is.na(whole_data$withdrawal_status) | whole_data$withdrawal_status ==0)),variable_v9];
+  if (sum(dim(dat_v9)) == 0){
+    dat_v9 <- data.frame(matrix(NA_character_, ncol = length(variable_v9)), stringsAsFactors = F)
+    colnames(dat_v9) <- variable_v9
+  }
+  dat_v9 <- dat_v9 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v9'))
+  combined <- left_join(combined, dat_v9, by = 'participant_id')
+  
+  ##### fu1 vist information #####
+  dat_fu1 <- whole_data[which(whole_data$redcap_event_name=='fu1_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_fu1];
+  if (sum(dim(dat_fu1)) == 0){
+    dat_fu1 <- data.frame(matrix(NA_character_, ncol = length(variable_fu1)), stringsAsFactors = F)
+    colnames(dat_fu1) <- variable_fu1
+  }
+  dat_fu1 <- dat_fu1 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_fu1'))
+  combined <- left_join(combined, dat_fu1, by = 'participant_id')
+  
+  ##### fu2 vist information #####
+  dat_fu2 <- whole_data[which(whole_data$redcap_event_name=='fu2_arm_1' & is.na(whole_data$redcap_repeat_instrument)& !is.na(whole_data$peg_score) & !is.na(whole_data$vdate)),variable_fu2];
+  if (sum(dim(dat_fu2)) == 0){
+    dat_fu2 <- data.frame(matrix(NA_character_, ncol = length(variable_fu2)), stringsAsFactors = F)
+    colnames(dat_fu2) <- variable_fu2
+  }
+  dat_fu2 <- dat_fu2 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_fu2'))
+  combined <- left_join(combined, dat_fu2, by = 'participant_id')
+  
+  ##### v100 vist information #####
+  dat_v10 <- whole_data[which(whole_data$redcap_event_name=='v10_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_v10];
+  if (sum(dim(dat_v10)) == 0){
+    dat_v10 <- data.frame(matrix(NA_character_, ncol = length(variable_v10)), stringsAsFactors = F)
+    colnames(dat_v10) <- variable_v10
+  }
+  dat_v10 <- dat_v10 %>% rename_at(vars(-participant_id), function(x) paste0(x, '_v10'))
+  combined <- left_join(combined, dat_v10, by = 'participant_id')
+  
+  ##### CW information #####
+  dat_cw <- whole_data[which(whole_data$redcap_event_name=='conclusion_arm_1' & is.na(whole_data$redcap_repeat_instrument)),variable_cw];
+  if (sum(dim(dat_cw)) == 0){
+    dat_cw <- data.frame(matrix(NA_character_, ncol = length(variable_cw)), stringsAsFactors = F)
+    colnames(dat_cw) <- variable_cw
+  }
+  combined <- left_join(combined, dat_cw, by = 'participant_id')
+  
+  combined$pre_callback3 <- ifelse(is.na(combined$pre_callback3),0,combined$pre_callback3)
+  
+  combined$vdate_base[is.na(combined$vdate_base)] <- combined$meds_dt_base[is.na(combined$vdate_base)]
+  combined$vdate_base[is.na(combined$vdate_base)] <- combined$samp_date_base[is.na(combined$vdate_base)]
+  # if(is.na(combined$vdate_base) && !is.na(combined$meds_dt_base)){
+  #   combined$vdate_base <- combined$meds_dt_base
+  # } else if(is.na(combined$vdate_base) && !is.na(combined$samp_date_base)){
+  #   combined$vdate_base <- combined$samp_date_base
+  # }
+  combined$vdate_v1[is.na(combined$vdate_v1)] <- combined$meds_dt_v1[is.na(combined$vdate_v1)]
+  combined$vdate_v1[is.na(combined$vdate_v1)] <- combined$samp_date_v1[is.na(combined$vdate_v1)]
+  #   if(is.na(combined$vdate_v1) && !is.na(combined$meds_dt_v1)){
+  #   combined$vdate_v1 <- combined$meds_dt_v1
+  # } else if(is.na(combined$vdate_v1) && !is.na(combined$samp_date_v1)){
+  #   combined$vdate_v1 <- combined$samp_date_v1
+  # }
+  combined$vdate_v2[is.na(combined$vdate_v2)] <- combined$meds_dt_v2[is.na(combined$vdate_v2)]
+  combined$vdate_v2[is.na(combined$vdate_v2)] <- combined$samp_date_v2[is.na(combined$vdate_v2)]
+  #   if(is.na(combined$vdate_v2) && !is.na(combined$meds_dt_v2)){
+  #   combined$vdate_v2 <- combined$meds_dt_v2
+  # } else if(is.na(combined$vdate_v2) && !is.na(combined$samp_date_v2)){
+  #   combined$vdate_v2 <- combined$samp_date_v2
+  # }
+  combined$vdate_v3[is.na(combined$vdate_v3)] <- combined$meds_dt_v3[is.na(combined$vdate_v3)]
+  combined$vdate_v3[is.na(combined$vdate_v3)] <- combined$samp_date_v3[is.na(combined$vdate_v3)]
+  #   if(is.na(combined$vdate_v3) && !is.na(combined$meds_dt_v3)){
+  #   combined$vdate_v3 <- combined$meds_dt_v3
+  # } else if(is.na(combined$vdate_v3) && !is.na(combined$samp_date_v3)){
+  #   combined$vdate_v3 <- combined$samp_date_v3
+  # }
+  combined$vdate_v4[is.na(combined$vdate_v4)] <- combined$meds_dt_v4[is.na(combined$vdate_v4)]
+  combined$vdate_v4[is.na(combined$vdate_v4)] <- combined$samp_date_v4[is.na(combined$vdate_v4)]
+  #   if(is.na(combined$vdate_v4) && !is.na(combined$meds_dt_v4)){
+  #   combined$vdate_v4 <- combined$meds_dt_v4
+  # } else if(is.na(combined$vdate_v4) && !is.na(combined$samp_date_v4)){
+  #   combined$vdate_v4 <- combined$samp_date_v4
+  # }
+  combined$vdate_v5[is.na(combined$vdate_v5)] <- combined$meds_dt_v5[is.na(combined$vdate_v5)]
+  combined$vdate_v5[is.na(combined$vdate_v5)] <- combined$samp_date_v5[is.na(combined$vdate_v5)]
+  #   if(is.na(combined$vdate_v5) && !is.na(combined$meds_dt_v5)){
+  #   combined$vdate_v5 <- combined$meds_dt_v5
+  # } else if(is.na(combined$vdate_v5) && !is.na(combined$samp_date_v5)){
+  #   combined$vdate_v5 <- combined$samp_date_v5
+  # }
+  combined$vdate_v6[is.na(combined$vdate_v6)] <- combined$meds_dt_v6[is.na(combined$vdate_v6)]
+  combined$vdate_v6[is.na(combined$vdate_v6)] <- combined$samp_date_v6[is.na(combined$vdate_v6)]
+  #   if(is.na(combined$vdate_v6) && !is.na(combined$meds_dt_v6)){
+  #   combined$vdate_v6 <- combined$meds_dt_v6
+  # } else if(is.na(combined$vdate_v6) && !is.na(combined$samp_date_v6)){
+  #   combined$vdate_v6 <- combined$samp_date_v6
+  # }
+  combined$vdate_v7[is.na(combined$vdate_v7)] <- combined$meds_dt_v7[is.na(combined$vdate_v7)]
+  combined$vdate_v7[is.na(combined$vdate_v7)] <- combined$samp_date_v7[is.na(combined$vdate_v7)]
+  #   if(is.na(combined$vdate_v7) && !is.na(combined$meds_dt_v7)){
+  #   combined$vdate_v7 <- combined$meds_dt_v7
+  # } else if(is.na(combined$vdate_v7) && !is.na(combined$samp_date_v7)){
+  #   combined$vdate_v7 <- combined$samp_date_v7
+  # }
+  combined$vdate_v8[is.na(combined$vdate_v8)] <- combined$meds_dt_v8[is.na(combined$vdate_v8)]
+  combined$vdate_v8[is.na(combined$vdate_v8)] <- combined$samp_date_v8[is.na(combined$vdate_v8)]
+  #   if(is.na(combined$vdate_v8) && !is.na(combined$meds_dt_v8)){
+  #   combined$vdate_v8 <- combined$meds_dt_v8
+  # } else if(is.na(combined$vdate_v8) && !is.na(combined$samp_date_v8)){
+  #   combined$vdate_v8 <- combined$samp_date_v8
+  # }
+  combined$vdate_v9[is.na(combined$vdate_v9)] <- combined$meds_dt_v9[is.na(combined$vdate_v9)]
+  combined$vdate_v9[is.na(combined$vdate_v9)] <- combined$samp_date_v9[is.na(combined$vdate_v9)]
+  #   if(is.na(combined$vdate_v9) && !is.na(combined$meds_dt_v9)){
+  #   combined$vdate_v9 <- combined$meds_dt_v9
+  # } else if(is.na(combined$vdate_v9) && !is.na(combined$samp_date_v9)){
+  #   combined$vdate_v9 <- combined$samp_date_v9
+  # }
+  combined$vdate_fu1[is.na(combined$vdate_fu1)] <- combined$meds_dt_fu1[is.na(combined$vdate_fu1)]
+  combined$vdate_fu1[is.na(combined$vdate_fu1)] <- combined$samp_date_fu1[is.na(combined$vdate_fu1)]
+  #   if(is.na(combined$vdate_fu1) && !is.na(combined$meds_dt_fu1)){
+  #   combined$vdate_fu1 <- combined$meds_dt_fu1
+  # } else if(is.na(combined$vdate_fu1) && !is.na(combined$samp_date_fu1)){
+  #   combined$vdate_fu1 <- combined$samp_date_fu1
+  # }
+  combined$vdate_fu2[is.na(combined$vdate_fu2)] <- combined$meds_dt_fu2[is.na(combined$vdate_fu2)]
+  combined$vdate_fu2[is.na(combined$vdate_fu2)] <- combined$samp_date_fu2[is.na(combined$vdate_fu2)]
+  #   if(is.na(combined$vdate_fu2) && !is.na(combined$meds_dt_fu2)){
+  #   combined$vdate_fu2 <- combined$meds_dt_fu2
+  # } else if(is.na(combined$vdate_fu2) && !is.na(combined$samp_date_fu2)){
+  #   combined$vdate_fu2 <- combined$samp_date_fu2
+  # }
+  combined$vdate_v10[is.na(combined$vdate_v10)] <- combined$meds_dt_v10[is.na(combined$vdate_v10)]
+  combined$vdate_v10[is.na(combined$vdate_v10)] <- combined$samp_date_v10[is.na(combined$vdate_v10)]
+  #   if(is.na(combined$vdate_v10) && !is.na(combined$meds_dt_v10)){
+  #   combined$vdate_v10 <- combined$meds_dt_v10
+  # } else if(is.na(combined$vdate_v10) && !is.na(combined$samp_date_v10)){
+  #   combined$vdate_v10 <- combined$samp_date_v10
+  # }
+
+#Need to fix the issue where participants start V1 mistakenly (happened twice as of 5/13/2024) and subsequently get counted as having started treatment
+combined$vdate_v1[is.na(combined$rand_code_v1) & !is.na(combined$vdate_v1)] <- NA
+  
+  #NEXT UP:
+  #for loop/apply: create a vcurrent variable that notes the last visit the patient completed (by use of vdate not missing), use ifelse down the line until reaching screening where inclusion will be used to det screen visit or screen fail.  I will then have to catch the cases that were withdrawn (separate variable) so I can properly do study status and properly line up the consort exits
+    
+    vfr <- function(dset){
+    if(((!is.na(dset[2]) & dset[3]=='Ineligible') | (dset[3]=='Rescreen Eligible' & !is.na(dset[50])))){
+      vcurrent <- 'fail'
+    } else if(!is.na(dset[47])){
+      vcurrent <- 'v10'
+    } else if(!is.na(dset[44])){
+      vcurrent <- 'fu2'
+    } else if(!is.na(dset[41])){
+      vcurrent <- 'fu1'
+    } else if(!is.na(dset[38])){
+      vcurrent <- 'v9'
+    } else if(!is.na(dset[35])){
+      vcurrent <- 'v8'
+    } else if(!is.na(dset[32])){
+      vcurrent <- 'v7'
+    } else if(!is.na(dset[29])){
+      vcurrent <- 'v6'
+    } else if(!is.na(dset[26])){
+      vcurrent <- 'v5'
+    } else if(!is.na(dset[23])){
+      vcurrent <- 'v4'
+    } else if(!is.na(dset[20])){
+      vcurrent <- 'v3'
+    } else if(!is.na(dset[17])){
+      vcurrent <- 'v2'
+    } else if(!is.na(dset[13])){
+      vcurrent <- 'v1'
+    } else if(!is.na(dset[8])){
+      vcurrent <- 'v0'
+    } else if(!is.na(dset[2]) & dset[3]=='Eligible'){
+      vcurrent <- 'screen'
+    } else if(is.na(dset[2]) | is.na(dset[3]) | dset[3]=='Screening Incomplete' | dset[3]=='Rescreen Eligible'){
+      vcurrent <- 'missing'
+    }
+    }
+  vcurent <- apply(combined,1,vfr)
+  combined$vcurrent <- vcurent
+  combined$wcurrent <- vcurent
+  
+  #Create cohort of randomized patients only
+  epats <- combined[which(!is.na(combined$rand_code_v1)),]
+  
+  #Create cohort of screen fails
+  sfail <- combined[which(combined$pre_screen_status=='Ineligible'),]
+  
+  #Target enrollment
+  target <- 130
+  
+  # The startdate is defined as the earliest consent date at each site
+  start_date <- data.frame();
+  start_date <- epats  %>% summarise(startdate = min(pre_date, na.rm = T))
+  #site_names <- start_date$redcap_data_access_group
+  
+  startmonth_site <- months(start_date$startdate)
+  startyear_site <- year(start_date$startdate)
+
+  enrolled = combined %>% filter(!is.na(icf_date_base))
+
+```
+
+```{r}
+epats %>% 
+  summarise(
+    `Participant ID` = participant_id,
+    Randomized = !is.na(rand_code_v1),
+    `V5 Completed` = !is.na(vdate_v5),
+    `V9 Completed` = !is.na(vdate_v9),
+    `V10 Completed` = !is.na(vdate_v10),
+    Status = conclusion
+  ) -> status
+
+reach_v1 = sum(status$Randomized, na.rm = T)
+reach_v5 = sum(status$`V5 Completed`, na.rm = T)
+reach_v9 = sum(status$`V9 Completed`, na.rm = T)
+reach_fu1 = sum(!is.na(epats$vdate_fu1), na.rm = T)
+complete_fu2 = sum(!is.na(epats$vdate_fu2), na.rm = T)
+reach_fu2 = length(union(status$`Participant ID`[status$`V10 Completed` == TRUE], epats$participant_id[!is.na(epats$vdate_fu2)]))
+reach_v10 = sum(status$`V10 Completed`, na.rm = T)
+
+status$Randomized = factor(status$Randomized,
+                           levels = c(T, F),
+                           labels = c("Yes", "No"))
+status$`V5 Completed` = factor(status$`V5 Completed`,
+                               levels = c(T, F),
+                               labels = c("Yes", "No"))
+status$`V9 Completed` = factor(status$`V9 Completed`,
+                               levels = c(T, F),
+                               labels = c("Yes", "No"))
+status$`V10 Completed` = factor(status$`V10 Completed`,
+                                levels = c(T, F),
+                                labels = c("Yes", "No"))
+status$Status = factor(
+  status$Status,
+  exclude = NULL,
+  levels = c(1, 2, 3, 4, NA),
+  labels = c(
+    "Completed",
+    "Ineligible after randomization",
+    "Withdrew consent",
+    "Investigator's opinion not to continue",
+    "Active in study"
+  )
+)
+
+
+```
+
+```{r DSD}
+valid_id = epats$participant_id[epats$conclusion %in% c(1, NA)]
+randomized_pt = whole_data[whole_data$participant_id%in% valid_id,]
+
+v0_date = randomized_pt[randomized_pt$redcap_event_name == "baseline_arm_1", c("participant_id", "vdate")] %>% 
+  filter(!is.na(vdate))
+colnames(v0_date)[2] = "v0_date"
+
+v1_date = randomized_pt[randomized_pt$redcap_event_name == "v1_arm_1", c("participant_id", "vdate")] %>% 
+  filter(!is.na(vdate))
+colnames(v1_date)[2] = "v1_date"
+
+v9_date = randomized_pt[randomized_pt$redcap_event_name == "v9_arm_1", c("participant_id", "vdate")] %>% 
+  filter(!is.na(vdate))
+colnames(v9_date)[2] = "v9_date"
+
+v10_date = randomized_pt[randomized_pt$redcap_event_name == "v10_arm_1", c("participant_id", "vdate")] %>% 
+  filter(!is.na(vdate))
+colnames(v10_date)[2] = "v10_date"
+
+library(dplyr)
+library(lubridate)
+
+dsd_var = grep("dsd_", variable.names(randomized_pt), value = T)
+DSD = randomized_pt[, c("participant_id", dsd_var)] %>% 
+  filter(!is.na(dsd_date)) %>% 
+  left_join(., v0_date) %>% 
+  left_join(., v1_date) %>% 
+  left_join(., v9_date) %>% 
+  left_join(., v10_date)
+
+df_prev1 = DSD %>%
+  filter(as.Date(dsd_date_adj) >= v1_date - 7 &
+           as.Date(dsd_date_adj) <= v1_date) %>%
+  group_by(participant_id) %>%
+  summarise(n = n(), v1_missing = n < 4) %>%
+  select(-n)
+
+df_prev9 = DSD %>%
+  filter(as.Date(dsd_date_adj) >= v9_date - 7 &
+           as.Date(dsd_date_adj) <= v9_date) %>%
+  group_by(participant_id) %>%
+  summarise(n = n(), v9_missing = n < 4) %>%
+  select(-n)
+
+df_prev10 = DSD %>%
+  filter(as.Date(dsd_date_adj) >= v10_date - 7 &
+           as.Date(dsd_date_adj) <= v10_date) %>%
+  group_by(participant_id) %>%
+  summarise(n = n(), v10_missing = n < 4) %>%
+  select(-n)
+
+# Missing
+DSD_summary = merge(df_prev1, df_prev9, all = TRUE) %>%
+  merge(., df_prev10, all = TRUE)
+
+DSD_table = matrix(NA, nrow = 3, ncol = 5)
+colnames(DSD_table) = c("Visit", "Total Expected (n%)", "Completed (n%)", "Awaiting (n%)", "Incomplete (n%)")
+rownames(DSD_table) = c("V1", "V9", "V10")
+
+# v1
+DSD_table[1, 1] = "V1"
+DSD_table[1, 2] = reach_v1
+DSD_table[1, 3] = sum(!DSD_summary$v1_missing, na.rm = T)
+DSD_table[1, 5] = sum(DSD_summary$v1_missing, na.rm = T)
+
+# V9
+DSD_table[2, 1] = "V9"
+DSD_table[2, 2] = reach_v9
+DSD_table[2, 3] = sum(!DSD_summary$v9_missing, na.rm = T)
+DSD_table[2, 5] = sum(DSD_summary$v9_missing, na.rm = T)
+
+# V10
+DSD_table[3, 1] = "V10"
+DSD_table[3, 2] = reach_v10
+DSD_table[3, 3] = sum(!DSD_summary$v10_missing, na.rm = T)
+DSD_table[3, 5] = sum(DSD_summary$v10_missing, na.rm = T)
+```
+
+```{r peg }
+peg_var = grep("peg_", variable.names(randomized_pt), value = T)
+PEG = randomized_pt[, c("participant_id", "redcap_event_name", peg_var, "vdate")] %>%
+  filter(!is.na(vdate)) %>%
+  filter(redcap_event_name %in% c("baseline_arm_1", "v10_arm_1", "fu1_arm_1", "fu2_arm_1"))
+
+whole_data$participant_id[which(whole_data$redcap_event_name == "v10_arm_1" & whole_data$peg_missfield == 0)] -> id_v10
+
+whole_data$participant_id[which(whole_data$redcap_event_name == "fu2_arm_1" & whole_data$peg_missfield  == 0)] -> id_fu2
+
+v10_notin_fu2 = id_v10 [!id_v10 %in% id_fu2]
+supp_fu2 = data.frame(participant_id = v10_notin_fu2,
+                      redcap_event_name = "fu2_arm_1")
+
+PEG = full_join(PEG, supp_fu2, by = c("participant_id", "redcap_event_name"))
+
+# Missing
+PEG_summary = PEG %>% 
+  group_by(participant_id, redcap_event_name) %>% 
+  summarise(missing = peg_missfield > 0 | is.na(peg_missfield))
+PEG_summary %>% 
+  filter(redcap_event_name == "baseline_arm_1") -> PEG_V0
+PEG_summary %>% 
+  filter(redcap_event_name == "v10_arm_1") -> PEG_V10
+PEG_summary %>% 
+  filter(redcap_event_name == "fu1_arm_1") -> PEG_FU1
+PEG_summary %>% 
+  filter(redcap_event_name == "fu2_arm_1") -> PEG_FU2
+
+PEG_table = matrix(NA, nrow = 4, ncol = 5)
+colnames(PEG_table) = c("Visit", "Total Expected (n%)", "Completed (n%)", "Awaiting (n%)", "Incomplete (n%)")
+rownames(PEG_table) = c("V0", "FU1", "FU2", "V10")
+
+# v0
+PEG_table[1, 1] = "V0"
+PEG_table[1, 2] = reach_v1
+PEG_table[1, 3] = sum(!PEG_V0$missing, na.rm = T)
+PEG_table[1, 5] = sum(PEG_V0$missing, na.rm = T)
+
+# FU1
+PEG_table[2, 1] = "FU1"
+PEG_table[2, 2] = reach_fu1
+PEG_table[2, 3] = sum(!PEG_FU1$missing, na.rm = T)
+PEG_table[2, 5] = sum(PEG_FU1$missing, na.rm = T)
+
+# FU2
+PEG_table[3, 1] = "FU2"
+PEG_table[3, 2] = reach_fu2 
+PEG_table[3, 3] = sum(!PEG_FU2$missing, na.rm = T)
+PEG_table[3, 5] = sum(PEG_FU2$missing, na.rm = T)
+
+# V10
+PEG_table[4, 1] = "V10"
+PEG_table[4, 2] = reach_v10
+PEG_table[4, 3] = sum(!PEG_V10$missing, na.rm = T)
+PEG_table[4, 5] = sum(PEG_V10$missing, na.rm = T)
+
+```
+
+```{r jaw }
+jaw_var = grep("jaw_", variable.names(randomized_pt), value = T)
+JAW = randomized_pt[, c("participant_id", "redcap_event_name", jaw_var, "vdate")] %>% 
+  filter(!is.na(vdate)) %>% 
+  filter(redcap_event_name %in% c("baseline_arm_1", "v5_arm_1", "v9_arm_1", "v10_arm_1"))
+# Missing
+JAW_summary = JAW %>% 
+  group_by(participant_id, redcap_event_name) %>% 
+  summarise(missing = jaw_functional_limitation_scale_complete != 2)
+JAW_summary %>% 
+  filter(redcap_event_name == "baseline_arm_1") -> JAW_V0
+JAW_summary %>% 
+  filter(redcap_event_name == "v5_arm_1") -> JAW_V5
+JAW_summary %>% 
+  filter(redcap_event_name == "v9_arm_1") -> JAW_V9
+JAW_summary %>% 
+  filter(redcap_event_name == "v10_arm_1") -> JAW_V10
+
+JAW_table = matrix(NA, nrow = 4, ncol = 5)
+colnames(JAW_table) = c("Visit", "Total Expected (n%)", "Completed (n%)", "Awaiting (n%)", "Incomplete (n%)")
+rownames(JAW_table) = c("V0", "V5", "V9", "V10")
+
+# v0
+JAW_table[1, 1] = "V0"
+JAW_table[1, 2] = reach_v1
+JAW_table[1, 3] = sum(!JAW_V0$missing, na.rm = T)
+JAW_table[1, 5] = sum(JAW_V0$missing, na.rm = T)
+
+# V5
+JAW_table[2, 1] = "V5"
+JAW_table[2, 2] = reach_v5
+JAW_table[2, 3] = sum(!JAW_V5$missing, na.rm = T)
+JAW_table[2, 5] = sum(JAW_V5$missing, na.rm = T)
+
+# V9
+JAW_table[3, 1] = "V9"
+JAW_table[3, 2] = reach_v9
+JAW_table[3, 3] = sum(!JAW_V9$missing, na.rm = T)
+JAW_table[3, 5] = sum(JAW_V9$missing, na.rm = T)
+
+# V10
+JAW_table[4, 1] = "V10"
+JAW_table[4, 2] = reach_v10
+JAW_table[4, 3] = sum(!JAW_V10$missing, na.rm = T)
+JAW_table[4, 5] = sum(JAW_V10$missing, na.rm = T)
+
+```
+
+```{r mouth_open}
+open_var = c("tmd_a", "tmd_unassist")
+OPEN = randomized_pt[, c("participant_id", "redcap_event_name", open_var, "vdate")] %>% 
+  filter(!is.na(vdate)) %>% 
+  filter(redcap_event_name %in% c("baseline_arm_1", "v5_arm_1", "v9_arm_1", "v10_arm_1"))
+# Missing
+OPEN_summary = OPEN %>% 
+  group_by(participant_id, redcap_event_name) %>% 
+  summarise(missing = is.na(tmd_a)|is.na(tmd_unassist))
+OPEN_summary %>% 
+  filter(redcap_event_name == "baseline_arm_1") -> OPEN_V0
+OPEN_summary %>% 
+  filter(redcap_event_name == "v5_arm_1") -> OPEN_V5
+OPEN_summary %>% 
+  filter(redcap_event_name == "v9_arm_1") -> OPEN_V9
+OPEN_summary %>% 
+  filter(redcap_event_name == "v10_arm_1") -> OPEN_V10
+
+OPEN_table = matrix(NA, nrow = 4, ncol = 5)
+colnames(OPEN_table) = c("Visit", "Total Expected (n%)", "Completed (n%)", "Awaiting (n%)", "Incomplete (n%)")
+rownames(OPEN_table) = c("V0", "V5", "V9", "V10")
+# v0
+OPEN_table[1, 1] = "V0"
+OPEN_table[1, 2] = reach_v1
+OPEN_table[1, 3] = sum(!OPEN_V0$missing, na.rm = T)
+OPEN_table[1, 5] = sum(OPEN_V0$missing, na.rm = T)
+
+# V5
+OPEN_table[2, 1] = "V5"
+OPEN_table[2, 2] = reach_v5
+OPEN_table[2, 3] = sum(!OPEN_V5$missing, na.rm = T)
+OPEN_table[2, 5] = sum(OPEN_V5$missing, na.rm = T)
+
+
+# V9
+OPEN_table[3, 1] = "V9"
+OPEN_table[3, 2] = reach_v9
+OPEN_table[3, 3] = sum(!OPEN_V9$missing, na.rm = T)
+OPEN_table[3, 5] = sum(OPEN_V9$missing, na.rm = T)
+
+# V10
+OPEN_table[4, 1] = "V10"
+OPEN_table[4, 2] = reach_v10
+OPEN_table[4, 3] = sum(!OPEN_V10$missing, na.rm = T)
+OPEN_table[4, 5] = sum(OPEN_V10$missing, na.rm = T)
+
+```
+
+```{r ppt }
+kg_r1 = grep("kg_r1", variable.names(randomized_pt), value = T)
+kg_l1 = grep("kg_l1", variable.names(randomized_pt), value = T)
+kpa_r1 = grep("kpa_r1", variable.names(randomized_pt), value = T)
+kpa_l1 = grep("kpa_l1", variable.names(randomized_pt), value = T)
+ppt_var = c(kg_r1, kg_l1, kpa_r1, kpa_l1)
+
+PPT = randomized_pt[, c("participant_id", "redcap_event_name", ppt_var, "vdate")] %>% 
+  filter(!is.na(vdate)) %>% 
+  filter(redcap_event_name %in% c("baseline_arm_1", "v5_arm_1", "v9_arm_1", "v10_arm_1"))
+# Missing
+PPT_summary = PPT %>%
+  select(-vdate) %>% 
+  group_by(participant_id, redcap_event_name) %>%
+  rowwise() %>%
+  summarise(missing = any(is.na(c_across(everything()))), .groups = 'drop')
+
+PPT_summary %>% 
+  filter(redcap_event_name == "baseline_arm_1") -> PPT_V0
+PPT_summary %>% 
+  filter(redcap_event_name == "v5_arm_1") -> PPT_V5
+PPT_summary %>% 
+  filter(redcap_event_name == "v9_arm_1") -> PPT_V9
+PPT_summary %>% 
+  filter(redcap_event_name == "v10_arm_1") -> PPT_V10
+
+PPT_table = matrix(NA, nrow = 4, ncol = 5)
+colnames(PPT_table) = c("Visit", "Total Expected (n%)", "Completed (n%)", "Awaiting (n%)", "Incomplete (n%)")
+rownames(PPT_table) = c("V0", "V5", "V9", "V10")
+# v0
+PPT_table[1, 1] = "V0"
+PPT_table[1, 2] = reach_v1
+PPT_table[1, 3] = sum(!PPT_V0$missing, na.rm = T)
+PPT_table[1, 5] = sum(PPT_V0$missing, na.rm = T)
+
+# V5
+PPT_table[2, 1] = "V5"
+PPT_table[2, 2] = reach_v5
+PPT_table[2, 3] = sum(!PPT_V5$missing, na.rm = T)
+PPT_table[2, 5] = sum(PPT_V5$missing, na.rm = T)
+
+
+# V9
+PPT_table[3, 1] = "V9"
+PPT_table[3, 2] = reach_v9
+PPT_table[3, 3] = sum(!PPT_V9$missing, na.rm = T)
+PPT_table[3, 5] = sum(PPT_V9$missing, na.rm = T)
+
+# V10
+PPT_table[4, 1] = "V10"
+PPT_table[4, 2] = reach_v10
+PPT_table[4, 3] = sum(!PPT_V10$missing, na.rm = T)
+PPT_table[4, 5] = sum(PPT_V10$missing, na.rm = T)
+```
+
+---
+title: "ULLTRA Study - Monthly Missing Data Report"
+
+subtitle: "`r paste0("Report date: ", wkreport_date)` \\ Reporting period:  `r paste0(start_date$startdate, " - ", wkreport_date)`"
+
+author: "Prepared by: Tingchang Wang"
+---
+
+\newpage
+
+# Figure 1. Study Enrollment Summary
+
+-   Total enrollment: `r nrow(enrolled)`
+-   Total randomized: `r nrow(epats)`
+-   Participants who reached V5: `r paste0(reach_v5, " (", round(100*reach_v5/nrow(epats)), "%)" )`
+-   Participants who reached V9: `r paste0(reach_v9, " (", round(100*reach_v9/nrow(epats)), "%)" )`
+-   Participants who reached FU1: `r paste0(reach_fu1, " (", round(100*reach_fu1/nrow(epats)), "%)" )`
+-   Participants who reached FU2: `r paste0(complete_fu2, " (", round(100*complete_fu2/nrow(epats)), "%)" )`
+-   Participants who reached V10: `r paste0(reach_v10, " (", round(100*reach_v10/nrow(epats)), "%)" )`
+
+Note: U081 skipped V5, but completed V9 before discontinuation of the study as a withdrawn visit.
+
+```{r}
+fig1_label = c("Total Enrollment", "Total Randomized", "Reached V5", "Reached V9", "Reached FU1", "Reached FU2", "Reached V10")
+fig1_count = c(nrow(enrolled), nrow(epats), reach_v5, reach_v9, reach_fu1, complete_fu2, reach_v10)
+fig1_freq = c(
+  paste0("(", round(100*nrow(enrolled)/nrow(enrolled)), "%)"),
+  paste0("(", round(100*nrow(epats)/nrow(enrolled)), "%)"),
+  paste0("(", round(100*reach_v5/nrow(enrolled)), "%)"),
+  paste0("(", round(100*reach_v9/nrow(enrolled)), "%)"),
+  paste0("(", round(100*reach_fu1/nrow(enrolled)), "%)"),
+  paste0("(", round(100*complete_fu2/nrow(enrolled)), "%)"),
+  paste0("(", round(100*reach_v10/nrow(enrolled)), "%)")
+              )
+library(ggplot2)
+
+# Create a data frame from your vectors
+df_fig1 = data.frame(
+  label = factor(fig1_label, levels = fig1_label),
+  count = fig1_count,
+  freq = fig1_freq
+)
+
+ggplot(df_fig1, aes(x = label, y = count)) +
+  geom_col(fill = "lightblue") +
+  ylim(0, nrow(enrolled)*1.1) +
+  geom_text(aes(label = count), vjust = -0.3, size = 3.5) +
+  geom_text(aes(label = freq), vjust = 1.8, size = 3.5, color = "black") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  labs(
+    title = "Study Enrollment Summary",
+    x = NULL,
+    y = "Number of Participants"
+  )
+
+
+```
+
+\newpage
+
+# Table 1. Participant Visit Status
+
+```{r}
+status %>% 
+  kable(align = c('l', 'c', 'c', 'c', 'c', 'c'),row.names = FALSE, format = "latex", escape = FALSE) %>% 
+  kable_styling(font_size = 10,latex_options = c("hold_position")) -> table1
+
+table1
+```
+
+\newpage
+
+
+
+Primary outcome:
+
+-   The Daily Symptom Diary (DSD) entries \>= 4 in 7 days prior to V1 and V9
+
+Secondary outcome:
+
+-   The Daily Symptom Diary (DSD) entries \>= 4 in 7 days prior to V1 and V10
+
+-   The Pain, Enjoyment, General Activity (PEG) score obtained at V0, the 1- and 3-month follow-up assessments, and at V10.
+
+Exploratory outcome:
+
+-   Pain intensity (JAW pain intensity) and range of motion in millimeters for unassisted and assisted mouth opening (Assisted/unassisted mouth opening).
+
+-   **Circulating cytokines in whole blood at V1, V5, and V9 (not included)**
+
+-   Pressure Pain Threshold (PPT) performed at V0, V5, V9, and V10.
+
+# Table 2. Outcome Data Summary
+```{r}
+Missing_table = rbind(DSD_table, PEG_table, JAW_table, OPEN_table, PPT_table)
+Missing_table = as.data.frame(Missing_table, stringsAsFactors = FALSE)
+
+Missing_table[, 2] = suppressWarnings(as.numeric(Missing_table[, 2]))
+Missing_table[, 3] = suppressWarnings(as.numeric(Missing_table[, 3]))
+Missing_table[, 5] = suppressWarnings(as.numeric(Missing_table[, 5]))
+Missing_table[, 4] = Missing_table[, 2] - Missing_table[, 3] - Missing_table[, 5]
+
+Missing_table_percent = Missing_table
+Missing_table_percent[, 2] = round(Missing_table[, 2]/nrow(epats)*100)
+Missing_table_percent[, 3:5] = round(Missing_table[, 3:5]/Missing_table[, 2]*100)
+
+for (i in 1:nrow(Missing_table)) {
+  for (j in 2:5) {
+    Missing_table[i, j] = paste0(Missing_table[i, j], " (", Missing_table_percent[i, j], "%)")
+  }
+}
+
+
+Missing_table %>% 
+  kable(align = c('l', 'c', 'c', 'c', 'c'),row.names = FALSE, format = "latex") %>% 
+  kableExtra::group_rows("DSD entries >= 4 in 7 days prior to visit", 1, 3) %>% 
+  kableExtra::group_rows("PEG score", 4, 7) %>% 
+  kableExtra::group_rows("JAW pain intensity", 8, 11) %>% 
+  kableExtra::group_rows("Assisted/unassisted mouth opening", 12, 15) %>% 
+  kableExtra::group_rows("Pressure pain threshold", 16, 19) %>% 
+  kable_styling(font_size = 12,latex_options = c("hold_position")) -> table2
+
+table2
+```
+
+Notes:
+
+-   "Completed": Data fully entered and verified
+
+-   "Awaiting": Participant reached visit, data expected but not entered yet
+
+-   "Incomplete": Visit missed or insufficient data collected (e.g., \<4 DSDs)
+
+\newpage
+
+# Table 3. Incomplete Outcomes
+
+```{r}
+# DSD
+V1 = df_prev1$participant_id[df_prev1$v1_missing]
+V9 = df_prev9$participant_id[df_prev9$v9_missing]
+V10 = df_prev10$participant_id[df_prev10$v10_missing]
+
+DSD_missing = c(rep("V1", length(V1)),
+rep("V9", length(V9)),
+rep("V10", length(V10)))
+id = c(V1, V9, V10)
+if(length(id)> 0){
+  DSD_missing = cbind(id, "DSD entries >= 4 in 7 days prior to visit", DSD_missing)
+}
+
+# PEG
+V0 = PEG_V0$participant_id[PEG_V0$missing]
+V10 = PEG_V10$participant_id[PEG_V10$missing]
+FU1 = PEG_FU1$participant_id[PEG_FU1$missing]
+FU2 = PEG_FU2$participant_id[PEG_FU2$missing]
+
+PEG_missing = c(rep("V0", length(V0)),
+                rep("V10", length(V10)),
+                rep("FU1", length(FU1)),
+                rep("FU2", length(FU2)))
+id = c(V0, V10, FU1, FU2)
+if(length(id)> 0){
+  PEG_missing = cbind(id, "PEG score", PEG_missing)
+}
+
+# JAW
+V0 = JAW_V0$participant_id[JAW_V0$missing]
+V5 = JAW_V5$participant_id[JAW_V5$missing]
+V9 = JAW_V9$participant_id[JAW_V9$missing]
+V10 = JAW_V10$participant_id[JAW_V10$missing]
+
+
+JAW_missing = c(rep("V0", length(V0)),
+                rep("V5", length(V5)),
+                rep("V9", length(V9)),
+                rep("V10", length(V10)))
+id = c(V0, V5, V9, V10)
+if(length(id)> 0){
+  JAW_missing = cbind(id, "JAW pain intensity", JAW_missing)
+}
+
+# OPEN
+V0 = OPEN_V0$participant_id[OPEN_V0$missing]
+V5 = OPEN_V5$participant_id[OPEN_V5$missing]
+V9 = OPEN_V9$participant_id[OPEN_V9$missing]
+V10 = OPEN_V10$participant_id[OPEN_V10$missing]
+
+
+OPEN_missing = c(rep("V0", length(V0)),
+                rep("V5", length(V5)),
+                rep("V9", length(V9)),
+                rep("V10", length(V10)))
+id = c(V0, V5, V9, V10)
+if(length(id)> 0){
+  OPEN_missing = cbind(id, "Assisted/unassisted mouth opening", OPEN_missing)
+}
+
+# PPT
+V0 = PPT_V0$participant_id[PPT_V0$missing]
+V5 = PPT_V5$participant_id[PPT_V5$missing]
+V9 = PPT_V9$participant_id[PPT_V9$missing]
+V10 = PPT_V10$participant_id[PPT_V10$missing]
+
+
+PPT_missing = c(rep("V0", length(V0)),
+                rep("V5", length(V5)),
+                rep("V9", length(V9)),
+                rep("V10", length(V10)))
+id = c(V0, V5, V9, V10)
+if(length(id)> 0){
+  PPT_missing = cbind(id, "Pressure pain threshold", PPT_missing)
+}
+
+missing_record = rbind(DSD_missing, PEG_missing, JAW_missing, OPEN_missing, PPT_missing)
+colnames(missing_record) = c("ID", "Incomplete Endpoint", "Event")
+missing_record %>% 
+  kable(align = c('l', 'c', 'c'),row.names = TRUE, format = "latex") %>% 
+  kable_styling(font_size = 12,latex_options = c("hold_position")) -> table3
+
+table3
+```

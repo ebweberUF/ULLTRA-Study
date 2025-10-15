@@ -1,0 +1,4 @@
+- Never use test data.  Always use real data
+- NEVER use mock, sample, or test data - ONLY real data from REDCap
+- Always fetch data from the REDCap API using the configured token
+- Do not create placeholder or example data sets

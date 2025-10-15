@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ULLTRA Study Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ULLTRA Study Dashboard</h1>
+            <p>Photobiomodulation for the Management of Temporomandibular Disorder Pain</p>
+        </header>
+
+        <nav class="tab-nav">
+            <button class="tab-button active" data-tab="enrollment">Enrollment</button>
+            <button class="tab-button" data-tab="out-of-window">Out of Window</button>
+            <button class="tab-button" data-tab="missing-data">Missing Data Report</button>
+            <button class="tab-button" data-tab="data-quality">Data Quality</button>
+            <button class="tab-button" data-tab="consort">CONSORT Diagram</button>
+        </nav>
+
+        <main>
+            <div id="enrollment" class="tab-content active">
+                <h2>Enrollment Statistics</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card clickable" data-category="enrolled">
+                        <h3>Total Enrolled</h3>
+                        <div class="metric-value" id="total-enrolled">--</div>
+                        <p class="metric-description">Participants with ICF date at baseline</p>
+                        <div class="click-hint">Click for details</div>
+                    </div>
+                    <div class="metric-card clickable" data-category="randomized">
+                        <h3>Total Randomized</h3>
+                        <div class="metric-value" id="total-randomized">--</div>
+                        <p class="metric-description">Participants with randomization code at V1</p>
+                        <div class="click-hint">Click for details</div>
+                    </div>
+                    <div class="metric-card clickable" data-category="screen-failures">
+                        <h3>Screen Failures</h3>
+                        <div class="metric-value" id="screen-failures">--</div>
+                        <p class="metric-description">Participants marked as screen failure</p>
+                        <div class="click-hint">Click for details</div>
+                    </div>
+                    <div class="metric-card clickable" data-category="completed">
+                        <h3>Completed Study</h3>
+                        <div class="metric-value" id="completed-study">--</div>
+                        <p class="metric-description">Participants who completed the study</p>
+                        <div class="click-hint">Click for details</div>
+                    </div>
+                    <div class="metric-card clickable" data-category="withdrawn">
+                        <h3>Withdrawn</h3>
+                        <div class="metric-value" id="withdrawn">--</div>
+                        <p class="metric-description">Participants who withdrew consent</p>
+                        <div class="click-hint">Click for details</div>
+                    </div>
+                    <div class="metric-card clickable" data-category="lost-followup">
+                        <h3>Lost to Follow-up</h3>
+                        <div class="metric-value" id="lost-followup">--</div>
+                        <p class="metric-description">Participants lost to follow-up</p>
+                        <div class="click-hint">Click for details</div>
+                    </div>
+                </div>
+
+                <div class="enrollment-chart-section">
+                    <h3>Enrollment Over Time</h3>
+                    <canvas id="enrollment-chart" width="800" height="400"></canvas>
+                    <div class="chart-actions" style="margin-top: 15px; text-align: center;">
+                        <button id="export-enrollment-chart" class="export-btn">Export Chart</button>
+                    </div>
+                </div>
+
+                <div class="nih-enrollment-section">
+                    <h3>NIH Enrollment Report</h3>
+                    <div id="nih-enrollment-table" class="nih-table-container">
+                        <!-- NIH enrollment table will be populated here -->
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="refresh-data" class="refresh-btn">Refresh Data</button>
+                    <button id="export-pdf" class="export-btn">Export to PDF</button>
+                </div>
+            </div>
+
+            <div id="out-of-window" class="tab-content">
+                <h2>Out of Window Visits</h2>
+                
+                <div class="out-of-window-summary">
+                    <h3>Out of Window Visit Summary</h3>
+                    <div class="ow-metrics-grid">
+                        <div class="metric-card">
+                            <h4>Total Out of Window</h4>
+                            <div class="metric-value" id="total-out-of-window">--</div>
+                            <p class="metric-description">Visits occurring outside scheduled windows</p>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Early Visits</h4>
+                            <div class="metric-value" id="early-visits">--</div>
+                            <p class="metric-description">Visits occurring before window opens</p>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Late Visits</h4>
+                            <div class="metric-value" id="late-visits">--</div>
+                            <p class="metric-description">Visits occurring after window closes</p>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Participants Affected</h4>
+                            <div class="metric-value" id="participants-affected">--</div>
+                            <p class="metric-description">Number of participants with OOW visits</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="out-of-window-filters">
+                    <h3>Filter Out of Window Visits</h3>
+                    <div class="filter-controls">
+                        <select id="ow-visit-filter" class="filter-select">
+                            <option value="all">All Visits</option>
+                            <option value="v1">V1 Window</option>
+                            <option value="v2">V2 Window</option>
+                            <option value="v3">V3 Window</option>
+                            <option value="v4">V4 Window</option>
+                            <option value="v5">V5 Window</option>
+                            <option value="v6">V6 Window</option>
+                            <option value="v7">V7 Window</option>
+                            <option value="v8">V8 Window</option>
+                            <option value="v9">V9 Window</option>
+                            <option value="v10">V10 Window</option>
+                            <option value="fu1">FU1 Window</option>
+                            <option value="fu2">FU2 Window</option>
+                        </select>
+                        <select id="ow-status-filter" class="filter-select">
+                            <option value="all">All Status</option>
+                            <option value="early">Early Only</option>
+                            <option value="late">Late Only</option>
+                        </select>
+                        <input type="text" id="ow-participant-search" placeholder="Search participant ID..." class="filter-input">
+                    </div>
+                </div>
+
+                <div class="out-of-window-table-section">
+                    <h3>Participant Visit Matrix</h3>
+                    <p class="matrix-description">Red dates indicate visits outside protocol windows. <strong>MISSED</strong> = visit was skipped or window passed. <strong>PENDING</strong> = visit expected and window still open.</p>
+                    <div id="out-of-window-table" class="ow-matrix-container">
+                        <table class="ow-matrix-table">
+                            <thead>
+                                <tr>
+                                    <th class="participant-col">Participant</th>
+                                    <th>V1</th>
+                                    <th>V2</th>
+                                    <th>V3</th>
+                                    <th>V4</th>
+                                    <th>V5</th>
+                                    <th>V6</th>
+                                    <th>V7</th>
+                                    <th>V8</th>
+                                    <th>V9</th>
+                                    <th>FU1</th>
+                                    <th>FU2</th>
+                                    <th>V10</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ow-matrix-body">
+                                <!-- Participant visit matrix will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="out-of-window-actions">
+                    <button id="refresh-ow-data" class="refresh-btn">Refresh Out of Window Data</button>
+                    <button id="export-ow-report" class="export-btn">Export OOW Report</button>
+                </div>
+            </div>
+
+            <div id="missing-data" class="tab-content">
+                <h2>ULLTRA Study - Missing Data Report</h2>
+                <div class="report-header">
+                    <div class="report-info">
+                        <p><strong>Report date:</strong> <span id="report-date">--</span></p>
+                        <p><strong>Reporting period:</strong> <span id="reporting-period">--</span></p>
+                        <p><strong>Prepared by:</strong> Claude Code</p>
+                    </div>
+                    <div class="report-actions">
+                        <button id="refresh-missing-data" class="refresh-btn">Refresh Data</button>
+                        <button id="export-missing-data-pdf" class="export-btn">Export PDF Report</button>
+                    </div>
+                </div>
+
+                <!-- Figure 1: Study Enrollment Summary -->
+                <section class="report-section">
+                    <h3>Figure 1. Study Enrollment Summary</h3>
+                    <div class="metrics-grid">
+                        <div class="metric-card clickable" data-category="total-enrollment">
+                            <h3>Total Enrollment</h3>
+                            <div class="metric-value" id="md-total-enrolled">--</div>
+                            <p class="metric-description">Participants with ICF date</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="total-randomized">
+                            <h3>Total Randomized</h3>
+                            <div class="metric-value" id="md-total-randomized">--</div>
+                            <p class="metric-description">Participants who started treatment</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="reached-v5">
+                            <h3>Reached V5</h3>
+                            <div class="metric-value" id="md-reached-v5">--</div>
+                            <p class="metric-description">Participants who reached V5</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="reached-v9">
+                            <h3>Reached V9</h3>
+                            <div class="metric-value" id="md-reached-v9">--</div>
+                            <p class="metric-description">Participants who reached V9</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="reached-fu1">
+                            <h3>Reached FU1</h3>
+                            <div class="metric-value" id="md-reached-fu1">--</div>
+                            <p class="metric-description">Participants who reached FU1</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="reached-fu2">
+                            <h3>Reached FU2</h3>
+                            <div class="metric-value" id="md-reached-fu2">--</div>
+                            <p class="metric-description">Participants who reached FU2</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="reached-v10">
+                            <h3>Reached V10</h3>
+                            <div class="metric-value" id="md-reached-v10">--</div>
+                            <p class="metric-description">Participants who reached V10</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                        <div class="metric-card clickable" data-category="completed-study">
+                            <h3>Completed Study</h3>
+                            <div class="metric-value" id="md-completed-study">--</div>
+                            <p class="metric-description">Participants who completed</p>
+                            <div class="click-hint">Click for details</div>
+                        </div>
+                    </div>
+                    <div class="enrollment-chart-container">
+                        <canvas id="missing-data-enrollment-chart" width="600" height="300"></canvas>
+                    </div>
+                    <div class="chart-note">
+                        <p><strong>Note:</strong> <span id="enrollment-note">Special notes about enrollment will appear here</span></p>
+                    </div>
+                </section>
+
+                <!-- Table 1: Participant Visit Status -->
+                <section class="report-section">
+                    <h3>Table 1. Participant Visit Status</h3>
+                    <div class="table-container">
+                        <table class="data-table" id="participant-visit-status-table">
+                            <thead>
+                                <tr>
+                                    <th>Participant ID</th>
+                                    <th>Randomized</th>
+                                    <th>V5 Completed</th>
+                                    <th>V9 Completed</th>
+                                    <th>V10 Completed</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="participant-visit-status-body">
+                                <!-- Table body will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Outcome Definitions -->
+                <section class="report-section">
+                    <h3>Study Outcomes</h3>
+                    <div class="outcome-definitions">
+                        <div class="outcome-group">
+                            <h4>Primary outcome:</h4>
+                            <ul>
+                                <li>The Daily Symptom Diary (DSD) entries ≥ 4 in 7 days prior to V1 and V9</li>
+                            </ul>
+                        </div>
+                        <div class="outcome-group">
+                            <h4>Secondary outcome:</h4>
+                            <ul>
+                                <li>The Daily Symptom Diary (DSD) entries ≥ 4 in 7 days prior to V1 and V10</li>
+                                <li>The Pain, Enjoyment, General Activity (PEG) score obtained at V0, the 1- and 3-month follow-up assessments, and at V10</li>
+                            </ul>
+                        </div>
+                        <div class="outcome-group">
+                            <h4>Exploratory outcome:</h4>
+                            <ul>
+                                <li>Pain intensity (JAW pain intensity) and range of motion in millimeters for unassisted and assisted mouth opening (Assisted/unassisted mouth opening)</li>
+                                <li>Circulating cytokines in whole blood at V1, V5, and V9 (not included)</li>
+                                <li>Pressure Pain Threshold (PPT) performed at V0, V5, V9, and V10</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Table 2: Outcome Data Summary -->
+                <section class="report-section">
+                    <h3>Table 2. Outcome Data Summary</h3>
+                    <div class="table-container">
+                        <table class="data-table" id="outcome-data-summary-table">
+                            <thead>
+                                <tr>
+                                    <th>Visit</th>
+                                    <th>Total Expected (n%)</th>
+                                    <th>Completed (n%)</th>
+                                    <th>Pending (n%)</th>
+                                    <th>Incomplete (n%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="outcome-data-summary-body">
+                                <!-- Table body will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-notes">
+                        <h5>Notes:</h5>
+                        <ul>
+                            <li><strong>"Completed":</strong> Data fully entered and verified</li>
+                            <li><strong>"Pending":</strong> Participant has not yet reached this visit</li>
+                            <li><strong>"Incomplete":</strong> Visit missed or insufficient data collected (e.g., <4 DSDs)</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Table 3: Incomplete Outcomes -->
+                <section class="report-section">
+                    <h3>Table 3. Incomplete Outcomes</h3>
+                    <div class="table-container">
+                        <table class="data-table" id="incomplete-outcomes-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Incomplete Endpoint</th>
+                                    <th>Event</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incomplete-outcomes-body">
+                                <!-- Table body will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <div id="data-quality" class="tab-content">
+                <h2>Data Quality & Missing Data Analysis</h2>
+                
+                <div class="data-quality-summary">
+                    <h3>Study Progress Overview</h3>
+                    <div class="progress-metrics-grid">
+                        <div class="progress-metric-card">
+                            <h4>V5 Completion</h4>
+                            <div class="progress-value" id="v5-completion">--</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="v5-progress"></div>
+                            </div>
+                        </div>
+                        <div class="progress-metric-card">
+                            <h4>V9 Completion</h4>
+                            <div class="progress-value" id="v9-completion">--</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="v9-progress"></div>
+                            </div>
+                        </div>
+                        <div class="progress-metric-card">
+                            <h4>V10 Completion</h4>
+                            <div class="progress-value" id="v10-completion">--</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="v10-progress"></div>
+                            </div>
+                        </div>
+                        <div class="progress-metric-card">
+                            <h4>FU2 Completion</h4>
+                            <div class="progress-value" id="fu2-completion">--</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="fu2-progress"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="outcome-measures-section">
+                    <h3>Outcome Data Completion</h3>
+                    <div class="outcome-tables">
+                        <!-- DSD Table -->
+                        <div class="outcome-table-container">
+                            <h4>Daily Symptom Diary (DSD) Completion</h4>
+                            <p class="outcome-description">≥4 entries in 7 days prior to visit (Primary outcome at V1 and V9)</p>
+                            <table class="outcome-table" id="dsd-table">
+                                <thead>
+                                    <tr>
+                                        <th>Visit</th>
+                                        <th>Expected</th>
+                                        <th>Completed</th>
+                                        <th>Completion Rate</th>
+                                        <th>Incomplete</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- PEG Table -->
+                        <div class="outcome-table-container">
+                            <h4>Pain, Enjoyment, General Activity (PEG) Score</h4>
+                            <p class="outcome-description">Secondary outcome measure at V0, FU1, FU2, and V10</p>
+                            <table class="outcome-table" id="peg-table">
+                                <thead>
+                                    <tr>
+                                        <th>Visit</th>
+                                        <th>Expected</th>
+                                        <th>Completed</th>
+                                        <th>Completion Rate</th>
+                                        <th>Incomplete</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- JAW Table -->
+                        <div class="outcome-table-container">
+                            <h4>JAW Functional Limitation Scale</h4>
+                            <p class="outcome-description">Pain intensity measure at V0, V5, V9, and V10</p>
+                            <table class="outcome-table" id="jaw-table">
+                                <thead>
+                                    <tr>
+                                        <th>Visit</th>
+                                        <th>Expected</th>
+                                        <th>Completed</th>
+                                        <th>Completion Rate</th>
+                                        <th>Incomplete</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Mouth Opening Table -->
+                        <div class="outcome-table-container">
+                            <h4>Mouth Opening Measurements</h4>
+                            <p class="outcome-description">Assisted/unassisted mouth opening at V0, V5, V9, and V10</p>
+                            <table class="outcome-table" id="mouth-opening-table">
+                                <thead>
+                                    <tr>
+                                        <th>Visit</th>
+                                        <th>Expected</th>
+                                        <th>Completed</th>
+                                        <th>Completion Rate</th>
+                                        <th>Incomplete</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- PPT Table -->
+                        <div class="outcome-table-container">
+                            <h4>Pressure Pain Threshold (PPT)</h4>
+                            <p class="outcome-description">Exploratory outcome at V0, V5, V9, and V10</p>
+                            <table class="outcome-table" id="ppt-table">
+                                <thead>
+                                    <tr>
+                                        <th>Visit</th>
+                                        <th>Expected</th>
+                                        <th>Completed</th>
+                                        <th>Completion Rate</th>
+                                        <th>Incomplete</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="incomplete-outcomes-section">
+                    <h3>Participants with Incomplete Outcomes</h3>
+                    <div class="incomplete-filter">
+                        <select id="incomplete-filter" class="incomplete-filter-select">
+                            <option value="all">All Incomplete Outcomes</option>
+                            <option value="dsd">DSD Incomplete</option>
+                            <option value="peg">PEG Incomplete</option>
+                            <option value="jaw">JAW Incomplete</option>
+                            <option value="mouth-opening">Mouth Opening Incomplete</option>
+                            <option value="ppt">PPT Incomplete</option>
+                        </select>
+                    </div>
+                    <div id="incomplete-list" class="incomplete-list">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <div class="data-quality-actions">
+                    <button id="refresh-quality-data" class="refresh-btn">Refresh Data Quality</button>
+                    <button id="export-quality-report" class="export-btn">Export Quality Report</button>
+                </div>
+            </div>
+
+            <div id="consort" class="tab-content">
+                <h2>CONSORT 2025 Flow Diagram</h2>
+                <p class="consort-subtitle">ULLTRA Study</p>
+
+                <div class="consort-actions">
+                    <button id="refresh-consort-data" class="refresh-btn">Refresh Data</button>
+                    <button id="export-consort-diagram" class="export-btn">Export Diagram</button>
+                </div>
+
+                <div class="consort-container">
+
+                    <!-- Enrollment -->
+                    <div class="phase-label">Enrollment</div>
+
+                    <div class="consort-row">
+                        <div class="consort-box" data-consort-category="assessed">
+                            <div class="box-content">
+                                <strong>Assessed for eligibility</strong><br>
+                                (n=<span class="box-number" id="consort-assessed">--</span>)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row exclusion-row">
+                        <div class="exclusion-box" data-consort-category="excluded">
+                            <strong>Excluded</strong> (n=<span class="box-number" id="consort-excluded">--</span>)
+                            <ul>
+                                <li>• Not meeting inclusion criteria (n=<span id="consort-not-eligible">--</span>)</li>
+                                <li>• Declined to participate (n=<span id="consort-declined">--</span>)</li>
+                                <li>• Other reasons (n=<span id="consort-other-excluded">--</span>)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row">
+                        <div class="consort-box" data-consort-category="enrolled">
+                            <div class="box-content">
+                                <strong>Enrolled</strong><br>
+                                (n=<span class="box-number" id="consort-enrolled">--</span>)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row exclusion-row">
+                        <div class="exclusion-box" style="background-color: #FFA500; border-color: #FFA500;" data-consort-category="notRandomized">
+                            <strong>Enrolled but Not Randomized</strong> (n=<span class="box-number" id="consort-not-randomized">--</span>)
+                            <ul>
+                                <li>• Awaiting V1 randomization (n=<span id="consort-awaiting-rand">--</span>)</li>
+                                <li>• Screen failure (n=<span id="consort-enrolled-screen-failure">--</span>)</li>
+                                <li>• Withdrew consent (n=<span id="consort-enrolled-withdrew">--</span>)</li>
+                                <li>• Lost to follow-up (n=<span id="consort-enrolled-lost">--</span>)</li>
+                                <li>• Investigator decision (n=<span id="consort-enrolled-investigator">--</span>)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row">
+                        <div class="consort-box" data-consort-category="randomized">
+                            <div class="box-content">
+                                <strong>Randomized</strong><br>
+                                (n=<span class="box-number" id="consort-randomized">--</span>)<br>
+                                <em style="font-size: 12px;">Blinded allocation to intervention arms</em>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row exclusion-row">
+                        <div class="exclusion-box" data-consort-category="notReachedV5">
+                            <strong>Did not reach V5</strong> (n=<span class="box-number" id="consort-not-reached-v5">--</span>)
+                            <ul>
+                                <li>• Lost to follow-up (n=<span id="consort-lost-before-v5">--</span>)</li>
+                                <li>• Withdrew consent (n=<span id="consort-withdrew-before-v5">--</span>)</li>
+                                <li>• Pending V5 (n=<span id="consort-pending-v5">--</span>)</li>
+                                <li>• Other reasons (n=<span id="consort-other-before-v5">--</span>)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row">
+                        <div class="consort-box" data-consort-category="reachedV5">
+                            <div class="box-content">
+                                <strong>Reached V5 (Mid-Treatment)</strong><br>
+                                (n=<span class="box-number" id="consort-reached-v5">--</span>)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row exclusion-row">
+                        <div class="exclusion-box" data-consort-category="notReachedV9">
+                            <strong>Did not reach V9</strong> (n=<span class="box-number" id="consort-not-reached-v9">--</span>)
+                            <ul>
+                                <li>• Lost to follow-up (n=<span id="consort-lost-between-v5-v9">--</span>)</li>
+                                <li>• Withdrew consent (n=<span id="consort-withdrew-between-v5-v9">--</span>)</li>
+                                <li>• Pending V9 (n=<span id="consort-pending-v9">--</span>)</li>
+                                <li>• Other reasons (n=<span id="consort-other-between-v5-v9">--</span>)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row">
+                        <div class="consort-box" data-consort-category="reachedV9">
+                            <div class="box-content">
+                                <strong>Reached V9 (End of Treatment)</strong><br>
+                                (n=<span class="box-number" id="consort-reached-v9">--</span>)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row exclusion-row">
+                        <div class="exclusion-box" data-consort-category="notReachedV10">
+                            <strong>Did not reach V10</strong> (n=<span class="box-number" id="consort-not-reached-v10">--</span>)
+                            <ul>
+                                <li>• Lost to follow-up (n=<span id="consort-lost-before-v10">--</span>)</li>
+                                <li>• Withdrew consent (n=<span id="consort-withdrew-before-v10">--</span>)</li>
+                                <li>• Pending V10 (n=<span id="consort-pending-v10">--</span>)</li>
+                                <li>• Other reasons (n=<span id="consort-other-before-v10">--</span>)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="consort-arrow"></div>
+
+                    <div class="consort-row">
+                        <div class="consort-box" data-consort-category="reachedV10">
+                            <div class="box-content">
+                                <strong>Reached V10 (6-Month Follow-up)</strong><br>
+                                (n=<span class="box-number" id="consort-reached-v10">--</span>)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="consort-note">
+                        Study ongoing - Analysis phase will be reported upon trial completion.<br>
+                        Last updated: <span id="consort-last-updated">--</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Loading data...</p>
+        </div>
+
+        <!-- Modal Dialog for Participant Details -->
+        <div id="participant-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modal-title">Participant Details</h2>
+                    <span class="modal-close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="participant-filter">
+                        <input type="text" id="participant-search" placeholder="Search participant ID...">
+                        <select id="participant-sort">
+                            <option value="id">Sort by ID</option>
+                            <option value="date">Sort by Date</option>
+                            <option value="status">Sort by Status</option>
+                        </select>
+                        <button id="export-participant-details" class="export-btn">Export to CSV</button>
+                    </div>
+                    <div id="participant-list" class="participant-list">
+                        <!-- Participant details will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

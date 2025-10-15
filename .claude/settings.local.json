@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(taskkill:*)",
+      "Bash(run_ulltra_dashboard.bat)",
+      "Bash(./run.bat)",
+      "Bash(rg:*)",
+      "Bash(start index.html)",
+      "Bash(node:*)",
+      "Bash(grep:*)",
+      "Bash(cp:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(dir:*)",
+      "Bash(start debug-missing-data.html)",
+      "Bash(start find_missing_participant.html)",
+      "Bash(curl:*)",
+      "WebFetch(domain:www.nature.com)",
+      "WebSearch",
+      "WebFetch(domain:www.equator-network.org)",
+      "Bash(start debug-consort.html)",
+      "Bash(start simple-consort-check.html)",
+      "Bash(start test-missing-data.html)",
+      "Bash(start direct-verification-test.html)",
+      "Read(//c/AHCDFS.AHC.UFL.EDU/FILES/DN/PERSONAL/ebweber/Desktop/**)",
+      "Bash(tasklist)",
+      "Bash(findstr:*)",
+      "mcp__chrome-devtools__list_console_messages",
+      "mcp__chrome-devtools__list_pages",
+      "WebFetch(domain:pmc.ncbi.nlm.nih.gov)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "defaultMode": "acceptEdits"
+  }
+}

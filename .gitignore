@@ -1,0 +1,17 @@
+# Local credentials
+API.txt
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# VS Code
+.vscode/
+
+# Large metadata files (>100MB)
+metadata/ULLTRA_2025-08-27_1036.REDCap.xml

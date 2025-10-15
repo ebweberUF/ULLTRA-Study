@@ -1,0 +1,11 @@
+# Core dependencies for ULLTRA Dashboard
+requests>=2.31.0
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Desktop application (optional)
+pyinstaller>=6.0.0
+
+# System tray support (optional)
+pystray>=0.19.5
+Pillow>=10.0.0

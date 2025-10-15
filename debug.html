@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Dashboard</title>
+</head>
+<body>
+    <h1>Dashboard Debug</h1>
+    <div id="status">Checking...</div>
+    <pre id="console"></pre>
+
+    <script src="script.js"></script>
+    <script>
+        const consoleDiv = document.getElementById('console');
+        const statusDiv = document.getElementById('status');
+
+        // Capture console output
+        const originalLog = console.log;
+        const originalError = console.error;
+
+        function addToConsole(type, ...args) {
+            consoleDiv.textContent += `[${type}] ${args.join(' ')}\n`;
+        }
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsole('LOG', ...args);
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsole('ERROR', ...args);
+        };
+
+        // Check if Dashboard loaded
+        setTimeout(() => {
+            if (window.dashboard) {
+                statusDiv.textContent = 'Dashboard object exists';
+                addToConsole('INFO', 'Dashboard initialized successfully');
+                addToConsole('INFO', 'Dashboard API:', window.dashboard.api ? 'OK' : 'MISSING');
+            } else {
+                statusDiv.textContent = 'ERROR: Dashboard not initialized';
+                statusDiv.style.color = 'red';
+            }
+        }, 2000);
+
+        // Catch errors
+        window.addEventListener('error', (e) => {
+            addToConsole('ERROR', `${e.message} at ${e.filename}:${e.lineno}:${e.colno}`);
+            statusDiv.textContent = 'ERROR: ' + e.message;
+            statusDiv.style.color = 'red';
+        });
+    </script>
+</body>
+</html>
