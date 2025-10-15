@@ -6732,24 +6732,42 @@ class SharePointCalendarManager {
         const container = document.getElementById('calendar-events-container');
         if (!container) return;
 
+        const deviceCode = result.user_code || 'Loading...';
+        const verificationUrl = result.verification_url || 'https://microsoft.com/devicelogin';
+        const expiresInMinutes = Math.floor((result.expires_in || 900) / 60);
+
         container.innerHTML = `
             <div class="calendar-auth-instructions">
-                <h3>🔐 Authentication Required</h3>
-                <p><strong>Please complete the following steps to authenticate:</strong></p>
-                <ol>
-                    ${result.instructions.map(instr => `<li>${instr}</li>`).join('')}
-                </ol>
+                <h3>🔐 SharePoint Authentication Required</h3>
+
+                <div class="device-code-display">
+                    <p style="font-size: 16px; margin-bottom: 10px;"><strong>Your Device Code:</strong></p>
+                    <div class="device-code-box" style="background: #667eea; color: white; padding: 30px; border-radius: 12px; font-size: 48px; font-weight: bold; letter-spacing: 8px; margin: 20px 0; font-family: 'Courier New', monospace; text-align: center;">
+                        ${deviceCode}
+                    </div>
+                    <p style="color: #666; font-size: 14px;">This code expires in ${expiresInMinutes} minutes</p>
+                </div>
+
+                <div class="auth-steps" style="margin: 30px 0; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
+                    <p style="font-size: 16px; margin-bottom: 15px;"><strong>Follow these steps:</strong></p>
+                    <ol style="font-size: 14px; line-height: 1.8;">
+                        <li>Click the link below to open the Microsoft verification page</li>
+                        <li>Enter the code shown above: <strong>${deviceCode}</strong></li>
+                        <li>Sign in with your Microsoft 365 credentials</li>
+                        <li>Grant permissions when prompted</li>
+                        <li>Return here - authentication will complete automatically</li>
+                    </ol>
+                </div>
+
                 <div class="auth-url-box">
                     <p><strong>Verification URL:</strong></p>
-                    <a href="${result.verification_url}" target="_blank" class="auth-url">${result.verification_url}</a>
+                    <a href="${verificationUrl}" target="_blank" class="auth-url" style="font-size: 16px; color: #667eea; text-decoration: none; font-weight: bold;">${verificationUrl}</a>
+                    <p style="font-size: 12px; color: #666; margin-top: 10px;">Click to open in a new tab</p>
                 </div>
-                <div class="auth-note">
-                    <p><strong>Note:</strong> ${result.note}</p>
-                    <p>Waiting for authentication... This page will update automatically once you complete the steps.</p>
-                </div>
-                <div class="loading-spinner">
+
+                <div class="loading-spinner" style="margin-top: 30px;">
                     <div class="spinner"></div>
-                    <p>Polling for authentication status...</p>
+                    <p style="color: #666;">Waiting for authentication... This page will update automatically.</p>
                 </div>
             </div>
         `;
