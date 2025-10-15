@@ -3,6 +3,9 @@ requests>=2.31.0
 pandas>=2.0.0
 numpy>=1.24.0
 
+# SharePoint integration
+Office365-REST-Python-Client>=2.5.0
+
 # Desktop application (optional)
 pyinstaller>=6.0.0
 

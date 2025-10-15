@@ -2309,3 +2309,92 @@ header p {
         gap: 8px;
     }
 }
+
+/* SharePoint Authentication Instructions Styles */
+.calendar-auth-instructions {
+    text-align: center;
+    padding: 40px 20px;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.calendar-auth-instructions h3 {
+    color: #495057;
+    margin-bottom: 20px;
+    font-size: 1.5em;
+}
+
+.calendar-auth-instructions ol {
+    text-align: left;
+    margin: 25px auto;
+    line-height: 2;
+    font-size: 0.95em;
+}
+
+.calendar-auth-instructions ol li {
+    margin-bottom: 12px;
+    color: #495057;
+}
+
+.auth-url-box {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    border: 2px solid #667eea;
+    margin: 25px 0;
+}
+
+.auth-url-box p {
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: #495057;
+}
+
+.auth-url {
+    display: inline-block;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.auth-url:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.auth-note {
+    background: #e7f3ff;
+    padding: 15px 20px;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+    margin: 25px 0;
+    line-height: 1.8;
+}
+
+.auth-note p {
+    color: #495057;
+    margin-bottom: 10px;
+}
+
+.auth-note p:last-child {
+    margin-bottom: 0;
+}
+
+.loading-spinner {
+    margin-top: 30px;
+    padding: 20px;
+}
+
+.loading-spinner .spinner {
+    margin: 0 auto 15px auto;
+}
+
+.loading-spinner p {
+    color: #6c757d;
+    font-style: italic;
+}

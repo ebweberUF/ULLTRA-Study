@@ -11,16 +11,11 @@ const CONFIG = {
     DEBUG_MODE: false, // Set to false to use real API
     TEST_MODE: false,  // Set to false to disable test data
 
-    // SharePoint Configuration (Browser-based Authentication)
+    // SharePoint Configuration (Device Code Flow Authentication)
+    // Authentication handled by Python backend using OAuth2 Device Code Flow
     SHAREPOINT_SITE_URL: 'https://uflorida.sharepoint.com/sites/PRICE',
     SHAREPOINT_LIST_NAME: 'PRICECalendar',
-    SHAREPOINT_LIST_VIEW: 'ULLTRA',
-
-    // Azure AD / Microsoft 365 Configuration
-    // These will need to be configured by your organization's Azure AD admin
-    AZURE_CLIENT_ID: null,  // Set your Azure AD App Client ID here
-    AZURE_TENANT_ID: 'ufl.onmicrosoft.com',  // UF tenant
-    AZURE_REDIRECT_URI: window.location.origin  // Current page URL
+    SHAREPOINT_LIST_VIEW: 'ULLTRA'
 };
 
 // Conclusion code definitions sourced from REDCap metadata (see ULLTRA data dictionary)
@@ -6544,132 +6539,118 @@ class MissingDataReportManager {
 class SharePointCalendarManager {
     constructor() {
         this.events = [];
-        this.msalInstance = null;
-        this.account = null;
         this.lastSync = null;
         this.isAuthenticated = false;
+        this.authCheckInterval = null;
         this.init();
     }
 
     async init() {
         console.log('Initializing SharePoint Calendar Manager...');
-        await this.initializeMsal();
+        await this.checkAuthStatus();
         this.setupEventListeners();
         this.updateConnectionStatus();
     }
 
-    async initializeMsal() {
-        // Check if Azure AD Client ID is configured
-        if (!CONFIG.AZURE_CLIENT_ID) {
-            console.warn('Azure AD Client ID not configured. SharePoint calendar will not be available.');
-            this.isAuthenticated = false;
-            return;
-        }
-
-        // MSAL configuration
-        const msalConfig = {
-            auth: {
-                clientId: CONFIG.AZURE_CLIENT_ID,
-                authority: `https://login.microsoftonline.com/${CONFIG.AZURE_TENANT_ID}`,
-                redirectUri: CONFIG.AZURE_REDIRECT_URI
-            },
-            cache: {
-                cacheLocation: 'sessionStorage', // Use session storage to avoid persistence across sessions
-                storeAuthStateInCookie: false
-            }
-        };
-
+    async checkAuthStatus() {
         try {
-            // Initialize MSAL instance
-            this.msalInstance = new msal.PublicClientApplication(msalConfig);
-            await this.msalInstance.initialize();
+            const response = await fetch('/api/sharepoint/auth/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
 
-            // Check if user is already logged in
-            const accounts = this.msalInstance.getAllAccounts();
-            if (accounts.length > 0) {
-                this.account = accounts[0];
-                this.isAuthenticated = true;
-                console.log('User already authenticated:', this.account.username);
-            } else {
-                console.log('No authenticated user found. User needs to sign in.');
-                this.isAuthenticated = false;
+            const status = await response.json();
+            this.isAuthenticated = status.authenticated;
+
+            if (status.message) {
+                console.log('[SharePoint]', status.message);
             }
+
+            return status;
         } catch (error) {
-            console.error('Error initializing MSAL:', error);
+            console.error('Error checking auth status:', error);
             this.isAuthenticated = false;
+            return { authenticated: false, error: error.message };
         }
     }
 
     async signIn() {
-        if (!this.msalInstance) {
-            console.error('MSAL not initialized');
-            return;
-        }
-
-        const loginRequest = {
-            scopes: ['Sites.Read.All', 'User.Read'] // Permissions needed for SharePoint access
-        };
-
         try {
-            const loginResponse = await this.msalInstance.loginPopup(loginRequest);
-            this.account = loginResponse.account;
-            this.isAuthenticated = true;
-            console.log('Sign in successful:', this.account.username);
+            // Start device code flow
+            const response = await fetch('/api/sharepoint/auth/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    site_url: CONFIG.SHAREPOINT_SITE_URL,
+                    list_name: CONFIG.SHAREPOINT_LIST_NAME
+                })
+            });
 
-            this.updateConnectionStatus();
-            this.loadCalendarEvents();
+            const result = await response.json();
+
+            if (!result.success) {
+                this.displayError(result.error || 'Authentication failed');
+                return;
+            }
+
+            // Display device code instructions
+            this.displayDeviceCodeInstructions(result);
+
+            // Start polling for authentication status
+            this.startAuthPolling();
+
         } catch (error) {
             console.error('Sign in error:', error);
-            this.displayError('Failed to sign in: ' + error.message);
+            this.displayError('Failed to start authentication: ' + error.message);
         }
     }
 
-    async signOut() {
-        if (!this.msalInstance || !this.account) {
-            return;
+    startAuthPolling() {
+        // Poll every 3 seconds to check if authentication is complete
+        if (this.authCheckInterval) {
+            clearInterval(this.authCheckInterval);
         }
 
+        this.authCheckInterval = setInterval(async () => {
+            const status = await this.checkAuthStatus();
+
+            if (status.authenticated) {
+                // Authentication successful!
+                clearInterval(this.authCheckInterval);
+                this.authCheckInterval = null;
+
+                this.updateConnectionStatus();
+                this.loadCalendarEvents();
+            } else if (status.error && status.error !== 'Not initialized') {
+                // Authentication failed
+                clearInterval(this.authCheckInterval);
+                this.authCheckInterval = null;
+
+                this.displayError('Authentication failed: ' + status.error);
+            }
+        }, 3000);
+    }
+
+    async signOut() {
         try {
-            await this.msalInstance.logoutPopup({
-                account: this.account
+            await fetch('/api/sharepoint/auth/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
             });
-            this.account = null;
+
             this.isAuthenticated = false;
             this.events = [];
+
+            if (this.authCheckInterval) {
+                clearInterval(this.authCheckInterval);
+                this.authCheckInterval = null;
+            }
 
             console.log('Sign out successful');
             this.updateConnectionStatus();
             this.displayNoConnectionMessage();
         } catch (error) {
             console.error('Sign out error:', error);
-        }
-    }
-
-    async getAccessToken() {
-        if (!this.msalInstance || !this.account) {
-            throw new Error('Not authenticated');
-        }
-
-        const tokenRequest = {
-            scopes: ['Sites.Read.All'],
-            account: this.account
-        };
-
-        try {
-            // Try to acquire token silently first
-            const response = await this.msalInstance.acquireTokenSilent(tokenRequest);
-            return response.accessToken;
-        } catch (error) {
-            console.warn('Silent token acquisition failed, trying interactive:', error);
-
-            // If silent acquisition fails, try interactive
-            try {
-                const response = await this.msalInstance.acquireTokenPopup(tokenRequest);
-                return response.accessToken;
-            } catch (interactiveError) {
-                console.error('Interactive token acquisition failed:', interactiveError);
-                throw interactiveError;
-            }
         }
     }
 
@@ -6723,18 +6704,17 @@ class SharePointCalendarManager {
         const signOutBtn = document.getElementById('sharepoint-signout');
 
         if (statusEl) {
-            statusEl.textContent = this.isAuthenticated ? 'Signed In' : 'Not Signed In';
+            statusEl.textContent = this.isAuthenticated ? 'Authenticated' : 'Not Authenticated';
             statusEl.style.color = this.isAuthenticated ? 'green' : 'red';
         }
 
         if (configEl) {
-            const isConfigured = CONFIG.AZURE_CLIENT_ID !== null;
-            configEl.textContent = isConfigured ? 'Azure AD Configured' : 'Not Configured';
-            configEl.style.color = isConfigured ? 'green' : 'orange';
-
-            // Show username if authenticated
-            if (this.isAuthenticated && this.account) {
-                configEl.textContent = `Signed in as: ${this.account.username}`;
+            if (this.isAuthenticated) {
+                configEl.textContent = 'Connected to SharePoint';
+                configEl.style.color = 'green';
+            } else {
+                configEl.textContent = 'Not Connected';
+                configEl.style.color = 'orange';
             }
         }
 
@@ -6746,6 +6726,33 @@ class SharePointCalendarManager {
         if (signOutBtn) {
             signOutBtn.style.display = this.isAuthenticated ? 'inline-block' : 'none';
         }
+    }
+
+    displayDeviceCodeInstructions(result) {
+        const container = document.getElementById('calendar-events-container');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="calendar-auth-instructions">
+                <h3>🔐 Authentication Required</h3>
+                <p><strong>Please complete the following steps to authenticate:</strong></p>
+                <ol>
+                    ${result.instructions.map(instr => `<li>${instr}</li>`).join('')}
+                </ol>
+                <div class="auth-url-box">
+                    <p><strong>Verification URL:</strong></p>
+                    <a href="${result.verification_url}" target="_blank" class="auth-url">${result.verification_url}</a>
+                </div>
+                <div class="auth-note">
+                    <p><strong>Note:</strong> ${result.note}</p>
+                    <p>Waiting for authentication... This page will update automatically once you complete the steps.</p>
+                </div>
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Polling for authentication status...</p>
+                </div>
+            </div>
+        `;
     }
 
     async loadCalendarEvents(forceRefresh = false) {
@@ -6774,105 +6781,33 @@ class SharePointCalendarManager {
 
     async fetchSharePointEvents() {
         try {
-            // Get access token
-            const accessToken = await this.getAccessToken();
+            // Fetch events from Python backend
+            const response = await fetch('/api/sharepoint/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
 
-            // First, get the site ID
-            const siteUrl = CONFIG.SHAREPOINT_SITE_URL;
-            const sitePath = new URL(siteUrl).pathname;
-            const hostname = new URL(siteUrl).hostname;
-
-            // Get site ID from Microsoft Graph
-            const siteResponse = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${hostname}:${sitePath}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (!siteResponse.ok) {
-                throw new Error(`Failed to get site: ${siteResponse.status} ${siteResponse.statusText}`);
+            if (response.status === 401) {
+                throw new Error('Not authenticated');
             }
 
-            const siteData = await siteResponse.json();
-            const siteId = siteData.id;
-
-            // Get the list
-            const listResponse = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$filter=displayName eq '${CONFIG.SHAREPOINT_LIST_NAME}'`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (!listResponse.ok) {
-                throw new Error(`Failed to get list: ${listResponse.status} ${listResponse.statusText}`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch events: ${response.status} ${response.statusText}`);
             }
 
-            const listData = await listResponse.json();
-            if (!listData.value || listData.value.length === 0) {
-                throw new Error(`List '${CONFIG.SHAREPOINT_LIST_NAME}' not found`);
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch events');
             }
 
-            const listId = listData.value[0].id;
-
-            // Get list items with fields expanded
-            const itemsResponse = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (!itemsResponse.ok) {
-                throw new Error(`Failed to get list items: ${itemsResponse.status} ${itemsResponse.statusText}`);
-            }
-
-            const itemsData = await itemsResponse.json();
-
-            // Transform SharePoint list items to calendar events
-            // Filter by the ULLTRA view if needed
-            const events = itemsData.value
-                .map(item => this.transformSharePointItemToEvent(item))
-                .filter(event => event !== null);
-
-            return events;
+            console.log(`Fetched ${result.count} events from SharePoint`);
+            return result.events;
 
         } catch (error) {
             console.error('Error fetching SharePoint events:', error);
             throw error;
         }
-    }
-
-    transformSharePointItemToEvent(item) {
-        // Transform SharePoint list item to calendar event format
-        // This mapping will depend on the actual column names in your SharePoint list
-        const fields = item.fields;
-
-        // Common SharePoint calendar fields
-        // Adjust these field names based on your actual SharePoint list structure
-        return {
-            id: item.id,
-            title: fields.Title || '',
-            date: fields.EventDate || fields.StartDate || fields.Date,
-            time: fields.EventTime || fields.Time || '',
-            participant: fields.Participant || fields.ParticipantID || '',
-            type: fields.Category || fields.EventType || fields.Type || 'general',
-            description: fields.Description || fields.Notes || fields.Body || '',
-            location: fields.Location || '',
-            status: fields.Status || '',
-            // Include any other relevant fields from your SharePoint list
-            rawFields: fields // Keep raw fields for debugging
-        };
     }
 
     displayCalendarEvents(events) {
@@ -7022,45 +6957,28 @@ class SharePointCalendarManager {
         const container = document.getElementById('calendar-events-container');
         if (!container) return;
 
-        // Check if Azure AD is configured
-        if (!CONFIG.AZURE_CLIENT_ID) {
-            container.innerHTML = `
-                <div class="calendar-no-connection">
-                    <h3>SharePoint Calendar Not Configured</h3>
-                    <p>Azure AD authentication has not been configured for this application.</p>
-                    <p class="calendar-note"><strong>Configuration Required:</strong></p>
-                    <ol>
-                        <li>Register an Azure AD application at <a href="https://portal.azure.com" target="_blank">Azure Portal</a></li>
-                        <li>Set the Client ID in <code>script.js</code> CONFIG.AZURE_CLIENT_ID</li>
-                        <li>Configure API permissions: Sites.Read.All and User.Read</li>
-                        <li>Add redirect URI: ${CONFIG.AZURE_REDIRECT_URI}</li>
-                        <li>Refresh the page</li>
-                    </ol>
-                    <p class="calendar-note"><strong>SharePoint Details:</strong></p>
-                    <ul>
-                        <li><strong>Site:</strong> ${CONFIG.SHAREPOINT_SITE_URL}</li>
-                        <li><strong>List:</strong> ${CONFIG.SHAREPOINT_LIST_NAME}</li>
-                        <li><strong>View:</strong> ${CONFIG.SHAREPOINT_LIST_VIEW}</li>
-                    </ul>
-                </div>
-            `;
-        } else {
-            // Azure AD is configured, user just needs to sign in
-            container.innerHTML = `
-                <div class="calendar-no-connection">
-                    <h3>Sign In Required</h3>
-                    <p>Please sign in with your Microsoft 365 account to view calendar events.</p>
-                    <button class="refresh-btn" onclick="window.sharePointCalendarManager.signIn()" style="margin: 20px auto; display: block; padding: 12px 24px; font-size: 16px;">
-                        Sign In with Microsoft
-                    </button>
-                    <p class="calendar-note"><strong>SharePoint Details:</strong></p>
-                    <ul>
-                        <li><strong>Site:</strong> ${CONFIG.SHAREPOINT_SITE_URL}</li>
-                        <li><strong>List:</strong> ${CONFIG.SHAREPOINT_LIST_NAME}</li>
-                    </ul>
-                </div>
-            `;
-        }
+        container.innerHTML = `
+            <div class="calendar-no-connection">
+                <h3>SharePoint Authentication Required</h3>
+                <p>Sign in with your Microsoft 365 account using browser-based OAuth authentication to view calendar events.</p>
+                <p class="calendar-note"><strong>How it works:</strong></p>
+                <ul>
+                    <li>Click the "Sign In" button below</li>
+                    <li>A browser window will open to microsoft.com/devicelogin</li>
+                    <li>Enter the device code shown in the Python console/terminal</li>
+                    <li>Sign in with your UF credentials</li>
+                    <li>This page will automatically refresh once authenticated</li>
+                </ul>
+                <button class="refresh-btn" onclick="window.sharePointCalendarManager.signIn()" style="margin: 20px auto; display: block; padding: 12px 24px; font-size: 16px;">
+                    🔐 Sign In with Microsoft
+                </button>
+                <p class="calendar-note"><strong>SharePoint Details:</strong></p>
+                <ul>
+                    <li><strong>Site:</strong> ${CONFIG.SHAREPOINT_SITE_URL}</li>
+                    <li><strong>List:</strong> ${CONFIG.SHAREPOINT_LIST_NAME}</li>
+                </ul>
+            </div>
+        `;
     }
 
     displayError(message) {

@@ -32,8 +32,8 @@ except ImportError:
     TRAY_AVAILABLE = False
 
 class CORSHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-    """HTTP request handler with CORS support"""
-    
+    """HTTP request handler with CORS support and API endpoints"""
+
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -43,10 +43,132 @@ class CORSHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
-    
+
     def log_message(self, format, *args):
         # Suppress HTTP server logs for cleaner output
         return
+
+    def do_POST(self):
+        """Handle POST requests for API endpoints"""
+        from sharepoint_api import get_sharepoint_manager
+        import json
+
+        # SharePoint API endpoints
+        if self.path == '/api/sharepoint/auth/start':
+            self.handle_sharepoint_auth_start()
+        elif self.path == '/api/sharepoint/auth/status':
+            self.handle_sharepoint_auth_status()
+        elif self.path == '/api/sharepoint/auth/logout':
+            self.handle_sharepoint_logout()
+        elif self.path == '/api/sharepoint/events':
+            self.handle_sharepoint_events()
+        else:
+            self.send_error(404, "Endpoint not found")
+
+    def handle_sharepoint_auth_start(self):
+        """Start SharePoint device code authentication"""
+        import json
+        from sharepoint_api import get_sharepoint_manager
+
+        try:
+            # Read request body for configuration
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 0:
+                body = self.rfile.read(content_length)
+                config = json.loads(body.decode('utf-8'))
+            else:
+                config = {}
+
+            # Get SharePoint configuration
+            site_url = config.get('site_url', 'https://uflorida.sharepoint.com/sites/PRICE')
+            list_name = config.get('list_name', 'PRICECalendar')
+
+            # Get or create SharePoint manager
+            sp_manager = get_sharepoint_manager(site_url, list_name)
+
+            # Start device code flow
+            result = sp_manager.start_device_code_flow()
+
+            # Send response
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+
+        except Exception as e:
+            self.send_error(500, f"Authentication error: {str(e)}")
+
+    def handle_sharepoint_auth_status(self):
+        """Check SharePoint authentication status"""
+        import json
+        from sharepoint_api import get_sharepoint_manager
+
+        try:
+            sp_manager = get_sharepoint_manager()
+            status = sp_manager.get_auth_status()
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(status).encode())
+
+        except Exception as e:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'authenticated': False,
+                'error': 'Not initialized'
+            }).encode())
+
+    def handle_sharepoint_logout(self):
+        """Logout from SharePoint"""
+        import json
+        from sharepoint_api import get_sharepoint_manager
+
+        try:
+            sp_manager = get_sharepoint_manager()
+            sp_manager.logout()
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'success': True}).encode())
+
+        except Exception as e:
+            self.send_error(500, f"Logout error: {str(e)}")
+
+    def handle_sharepoint_events(self):
+        """Fetch SharePoint calendar events"""
+        import json
+        from sharepoint_api import get_sharepoint_manager
+
+        try:
+            sp_manager = get_sharepoint_manager()
+
+            if not sp_manager.is_authenticated():
+                self.send_response(401)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'error': 'Not authenticated'
+                }).encode())
+                return
+
+            # Fetch events
+            events = sp_manager.get_calendar_events()
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'events': events,
+                'count': len(events)
+            }).encode())
+
+        except Exception as e:
+            self.send_error(500, f"Error fetching events: {str(e)}")
 
 class ULLTRADashboard:
     """Main application class for ULLTRA Dashboard"""
