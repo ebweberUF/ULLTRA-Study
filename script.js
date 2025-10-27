@@ -1652,13 +1652,6 @@ class Dashboard {
                 // Load tab-specific data
                 if (tabId === 'data-quality') {
                     this.loadDataQuality();
-                } else if (tabId === 'out-of-window') {
-                    this.loadOutOfWindowData();
-                } else if (tabId === 'missing-data') {
-                    // Load missing data report
-                    if (window.missingDataReportManager) {
-                        window.missingDataReportManager.loadMissingDataReport();
-                    }
                 } else if (tabId === 'consort') {
                     this.loadConsortData();
                 }
@@ -1712,42 +1705,6 @@ class Dashboard {
         if (incompleteFilter) {
             incompleteFilter.addEventListener('change', (e) => {
                 this.filterIncompleteOutcomes(e.target.value);
-            });
-        }
-
-        // Out of Window tab events
-        const refreshOWBtn = document.getElementById('refresh-ow-data');
-        if (refreshOWBtn) {
-            refreshOWBtn.addEventListener('click', () => {
-                this.loadOutOfWindowData(true);
-            });
-        }
-
-        const exportOWBtn = document.getElementById('export-ow-report');
-        if (exportOWBtn) {
-            exportOWBtn.addEventListener('click', () => {
-                this.exportOutOfWindowReport();
-            });
-        }
-
-        const owVisitFilter = document.getElementById('ow-visit-filter');
-        if (owVisitFilter) {
-            owVisitFilter.addEventListener('change', () => {
-                this.filterOutOfWindowData();
-            });
-        }
-
-        const owStatusFilter = document.getElementById('ow-status-filter');
-        if (owStatusFilter) {
-            owStatusFilter.addEventListener('change', () => {
-                this.filterOutOfWindowData();
-            });
-        }
-
-        const owParticipantSearch = document.getElementById('ow-participant-search');
-        if (owParticipantSearch) {
-            owParticipantSearch.addEventListener('input', () => {
-                this.filterOutOfWindowData();
             });
         }
 
@@ -7031,12 +6988,8 @@ class SharePointCalendarManager {
     }
 }
 
-// Initialize Missing Data Report Manager when DOM is loaded
+// Initialize SharePoint Calendar Manager when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, initializing missing data report manager...');
-    window.missingDataReportManager = new MissingDataReportManager();
-
-    // Initialize SharePoint Calendar Manager
     console.log('Initializing SharePoint Calendar Manager...');
     window.sharePointCalendarManager = new SharePointCalendarManager();
 });
