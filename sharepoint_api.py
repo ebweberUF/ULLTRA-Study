@@ -10,6 +10,7 @@ from typing import Optional, Dict, List, Any
 
 try:
     from office365.sharepoint.client_context import ClientContext
+    import msal
     OFFICE365_AVAILABLE = True
 except ImportError:
     OFFICE365_AVAILABLE = False
@@ -51,22 +52,52 @@ class SharePointManager:
             }
 
         try:
-            # Start device code flow in background thread
+            # Use MSAL directly to get device code
+            app = msal.PublicClientApplication(
+                client_id=self.CLIENT_ID,
+                authority=f"https://login.microsoftonline.com/{self.TENANT_ID}"
+            )
+
+            # Initiate device flow - this returns the device code info
+            flow = app.initiate_device_flow(scopes=["https://graph.microsoft.com/.default"])
+
+            if "user_code" not in flow:
+                raise Exception("Failed to create device flow")
+
+            # Store device code info
+            self.auth_status['user_code'] = flow['user_code']
+            self.auth_status['device_code'] = flow['device_code']
+            self.auth_status['verification_url'] = flow['verification_uri']
+            self.auth_status['message'] = flow['message']
+            self.auth_status['expires_in'] = flow.get('expires_in', 900)
+
+            # Start authentication in background thread
             def authenticate():
                 try:
-                    self.ctx = ClientContext(self.site_url).with_device_flow(
-                        tenant=self.TENANT_ID,
-                        client_id=self.CLIENT_ID
-                    )
+                    # Wait for user to authenticate
+                    result = app.acquire_token_by_device_flow(flow)
 
-                    # Test connection
-                    web = self.ctx.web
-                    self.ctx.load(web)
-                    self.ctx.execute_query()
+                    if "access_token" in result:
+                        # Now use the token with Office365 library
+                        self.access_token = result['access_token']
 
-                    self.auth_status['authenticated'] = True
-                    self.auth_status['message'] = f'Successfully connected to: {web.properties.get("Title", "SharePoint")}'
-                    print(f"[SharePoint] Authentication successful")
+                        # Create SharePoint context with the token
+                        self.ctx = ClientContext(self.site_url)
+                        self.ctx.with_access_token(lambda: result['access_token'])
+
+                        # Test connection
+                        web = self.ctx.web
+                        self.ctx.load(web)
+                        self.ctx.execute_query()
+
+                        self.auth_status['authenticated'] = True
+                        self.auth_status['message'] = f'Successfully connected to: {web.properties.get("Title", "SharePoint")}'
+                        print(f"[SharePoint] Authentication successful")
+                    else:
+                        error_msg = result.get('error_description', 'Authentication failed')
+                        self.auth_status['authenticated'] = False
+                        self.auth_status['error'] = error_msg
+                        print(f"[SharePoint] Authentication failed: {error_msg}")
 
                 except Exception as e:
                     self.auth_status['authenticated'] = False
@@ -79,16 +110,18 @@ class SharePointManager:
 
             return {
                 'success': True,
-                'message': 'Device code flow initiated',
+                'user_code': flow['user_code'],
+                'device_code': flow['device_code'],
+                'verification_url': flow['verification_uri'],
+                'expires_in': flow.get('expires_in', 900),
+                'message': flow['message'],
                 'instructions': [
-                    'Open your web browser and go to: https://microsoft.com/devicelogin',
-                    'Enter the code that appears in your terminal/console',
+                    f"Go to: {flow['verification_uri']}",
+                    f"Enter the code: {flow['user_code']}",
                     'Sign in with your Microsoft 365 credentials',
                     'Grant permissions when prompted',
                     'Return here - authentication will complete automatically'
-                ],
-                'verification_url': 'https://microsoft.com/devicelogin',
-                'note': 'The device code will appear in the Python console/terminal where the server is running'
+                ]
             }
 
         except Exception as e:
